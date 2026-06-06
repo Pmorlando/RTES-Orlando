@@ -6,9 +6,10 @@
 #include <stdio.h>
 #include <sched.h>
 #include <unistd.h>
+#include <string.h>
 
 #define COUNT  1000
-#define SCHED_POLICY
+#define SCHED_POLICY SCHED_FIFO
 
 typedef struct
 {
@@ -63,6 +64,8 @@ int main (int argc, char *argv[])
 {
    int rc, max_prio;
    int i=0; 
+   cpu_set_t cpuset;
+
    
    pthread_attr_init(&incattr);
    pthread_attr_init(&decattr);
@@ -72,6 +75,11 @@ int main (int argc, char *argv[])
    
    pthread_attr_setschedpolicy(&incattr, SCHED_POLICY);
    pthread_attr_setschedpolicy(&decattr, SCHED_POLICY);
+   
+   CPU_ZERO(&cpuset);
+   CPU_SET(3, &cpuset); // making CPU core 3 do all the work
+   pthread_attr_setaffinity_np(&incattr, sizeof(cpu_set_t), &cpuset);
+   pthread_attr_setaffinity_np(&decattr, sizeof(cpu_set_t), &cpuset);
    
    max_prio=sched_get_priority_max(SCHED_POLICY);// gets max priority available 
    fifo_param.sched_priority=max_prio;
