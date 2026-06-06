@@ -19,6 +19,10 @@
 // calls to syslog.
 
 // This is necessary for CPU affinity macros in Linux
+
+// Ran by Phil Orlando but not changes made due to already matching the assignment but added comments along code 
+// to show sections to change for different scenarios
+
 #define _GNU_SOURCE
 
 #include <stdio.h>
@@ -81,7 +85,7 @@ typedef struct
  */
 void *fib10(void *threadp)
 {
-   double event_time, run_time=0.0;
+   double event_time, run_time=0.0, c1=10.0;// change for diff C1 value
    int limit=0, release=0, cpucore, i;
    threadParams_t *threadParams = (threadParams_t *)threadp;
    unsigned int required_test_cycles;
@@ -93,7 +97,7 @@ void *fib10(void *threadp)
    FIB_TEST(seqIterations, FIB_TEST_CYCLES);
    run_time=getTimeMsec() - event_time;
 
-   required_test_cycles = (int)(10.0/run_time);
+   required_test_cycles = (int)(c1/run_time);
    printf("F10 runtime calibration %lf msec per %d test cycles, so %u required\n", run_time, FIB_TEST_CYCLES, required_test_cycles);
 
    while(!abortTest)
@@ -124,7 +128,7 @@ void *fib10(void *threadp)
 
 void *fib20(void *threadp)
 {
-   double event_time, run_time=0.0;
+   double event_time, run_time=0.0, c2 = 20.0;//change for diff C2 value
    int limit=0, release=0, cpucore, i;
    threadParams_t *threadParams = (threadParams_t *)threadp;
    int required_test_cycles;
@@ -136,7 +140,7 @@ void *fib20(void *threadp)
    FIB_TEST(seqIterations, FIB_TEST_CYCLES);
    run_time=getTimeMsec() - event_time;
 
-   required_test_cycles = (int)(20.0/run_time);
+   required_test_cycles = (int)(c2/run_time);
    printf("F20 runtime calibration %lf msec per %d test cycles, so %d required\n", run_time, FIB_TEST_CYCLES, required_test_cycles);
 
    while(!abortTest)
@@ -240,25 +244,25 @@ void *Sequencer(void *threadp)
       //
 
       // Simulate the C.I. for S1 and S2 and timestamp in log
-      printf("\n**** CI t=%lf\n", event_time=getTimeMsec() - start_time);
+      printf("\n**** CI t=%lf\n", event_time=getTimeMsec() - start_time); // star when both requests are recieved
       sem_post(&semF10); sem_post(&semF20);
 
-      usleep(20*USEC_PER_MSEC); sem_post(&semF10);
+      usleep(20*USEC_PER_MSEC); sem_post(&semF10); // second time step for C1 which is when that request is arriving 
       printf("t=%lf\n", event_time=getTimeMsec() - start_time);
 
-      usleep(20*USEC_PER_MSEC); sem_post(&semF10);
+      usleep(20*USEC_PER_MSEC); sem_post(&semF10);// third request for C1
       printf("t=%lf\n", event_time=getTimeMsec() - start_time);
 
-      usleep(10*USEC_PER_MSEC); sem_post(&semF20);
+      usleep(10*USEC_PER_MSEC); sem_post(&semF20);// second C2 submitted 
       printf("t=%lf\n", event_time=getTimeMsec() - start_time);
 
-      usleep(10*USEC_PER_MSEC); sem_post(&semF10);
+      usleep(10*USEC_PER_MSEC); sem_post(&semF10);// 4th C1 submission
       printf("t=%lf\n", event_time=getTimeMsec() - start_time);
 
-      usleep(20*USEC_PER_MSEC); sem_post(&semF10);
+      usleep(20*USEC_PER_MSEC); sem_post(&semF10);// 5th and final C2 request in LCM 
       printf("t=%lf\n", event_time=getTimeMsec() - start_time);
 
-      usleep(20*USEC_PER_MSEC);
+      usleep(20*USEC_PER_MSEC); // deay to break between last c1 and restart of initial 
 
       MajorPeriodCnt++;
    } 
@@ -324,11 +328,11 @@ void main(void)
     printf("rt_max_prio=%d\n", rt_max_prio);
     printf("rt_min_prio=%d\n", rt_min_prio);
 
-    for(i=0; i < NUM_THREADS; i++)
+    for(i=0; i < NUM_THREADS; i++)// for loop assigning threads attributes and sched params 
     {
 
       CPU_ZERO(&threadcpu);
-      CPU_SET(3, &threadcpu);
+      CPU_SET(3, &threadcpu);//set to run on 1 core 
 
       rc=pthread_attr_init(&rt_sched_attr[i]);
       rc=pthread_attr_setinheritsched(&rt_sched_attr[i], PTHREAD_EXPLICIT_SCHED);
@@ -341,7 +345,7 @@ void main(void)
       threadParams[i].threadIdx=i;
     }
    
-    printf("Service threads will run on %d CPU cores\n", CPU_COUNT(&threadcpu));
+    printf("Service threads will run on %d CPU core\n", CPU_COUNT(&threadcpu));// display the core being used
 
     // Create Service threads which will block awaiting release for:
     //
@@ -361,7 +365,7 @@ void main(void)
                      );
 
 
-    // Wait for service threads to calibrate and await relese by sequencer
+    // Wait for service threads to calibrate and await release by sequencer
     usleep(300000);
  
     // Create Sequencer thread, which like a cyclic executive, is highest prio
