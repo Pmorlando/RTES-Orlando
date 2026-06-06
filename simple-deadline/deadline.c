@@ -1,16 +1,19 @@
 // https://www.i-programmer.info/programming/cc/13002-applying-c-deadline-scheduling.html?start=1
-//
+// Code taken from Sam Siewert and modified by Phil Orlando
 
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/syscall.h>
-#include <linux/sched.h>
 #include <pthread.h>
 #include <stdint.h>
 
 #include <unistd.h>
-#include <sys/syscall.h>
+#include <time.h>
+#include <sched.h>
+
+#define USE_DEADLINE //comment out to do the FIFO sked
+
 
 struct sched_attr 
 {
@@ -29,8 +32,12 @@ int sched_setattr(pid_t pid, const struct sched_attr *attr, unsigned int flags)
     return syscall(__NR_sched_setattr, pid, attr, flags);
 }
 
-void * threadA(void *p) 
+void *threadA(void *p) 
 {
+    struct timespec current;
+    
+#ifdef USE_DEADLINE // for using deadline will trigger this
+    
     struct sched_attr attr = 
     {
         .size = sizeof (attr),
@@ -41,10 +48,17 @@ void * threadA(void *p)
     };
 
     sched_setattr(0, &attr, 0);
-
+#else 
+    // FIFO 
+    struct sched_param fifo_param;
+    fifo_param.sched_priority=sched_get_priority_max(SCHED_FIFO);
+    
+    
     for (;;) 
     {
-        printf("Time is - please fill this in using POSIX clock_gettime\n");
+        clock_gettime(CLOCK_MONOTONIC_RAW, &current);//clock wont be affected by outside changes
+        printf("Time is %ld sec and %ld nsec\n",current.sec, current.nsec);
+        
         fflush(0);
         sched_yield();
     };
