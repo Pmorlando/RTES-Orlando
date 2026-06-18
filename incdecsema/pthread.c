@@ -65,7 +65,7 @@ int main (int argc, char *argv[])
    int rc, max_prio;
    int i=0; 
    
-   sem_init(&sem, 0,1); //once dec made it will wait
+   sem_init(&sem, 0, 0); //once dec made it will wait
    
    threadParams[i].threadIdx=i;
    pthread_create(&threads[i],   // pointer to thread descriptor
@@ -73,15 +73,14 @@ int main (int argc, char *argv[])
                   incThread, // thread function entry point add up incrementally 1000 times
                   (void *)&(threadParams[i]) // parameters to pass in
                  );
+   pthread_join(threads[0], NULL);// wait for inc to be done
+   sem_post(&sem);
+                 
    i++; // increase i to 1 to switch threads 
    
    
    threadParams[i].threadIdx=i;
-   pthread_create(&threads[i], (void *)0, decThread, (void *)&(threadParams[i]));// subract incrementally 1000 times. 
-
-   pthread_join(threads[0], NULL);// wait for inc to be done
-   sem_post(&sem);
-   
+   pthread_create(&threads[i], (void *)0, decThread, (void *)&(threadParams[i]));// subract incrementally 1000 times.   
    pthread_join(threads[1], NULL);// join when dec done
    
    sem_destroy(&sem);
