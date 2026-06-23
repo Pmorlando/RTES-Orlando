@@ -55,10 +55,10 @@ void *grabRsrcs(void *threadp)
      if(pthread_mutex_trylock(&rsrcB) != 0)
      {
       pthread_mutex_unlock(&rsrcA);
-      printf("B is in use, Thread 1 started random pause\n")
+      printf("B is in use, Thread 1 started random pause\n");
 
       struct timespec wait;
-      wait.tv_sec = 0
+      wait.tv_sec = 0;
       wait.tv_nsec = rand() % 10000000;
       
       nanosleep(&wait, NULL);
@@ -85,10 +85,10 @@ void *grabRsrcs(void *threadp)
      if(pthread_mutex_trylock(&rsrcA) != 0)
      {
       pthread_mutex_unlock(&rsrcB);
-      printf("A is in use, Thread 2 started random pause\n")
+      printf("A is in use, Thread 2 started random pause\n");
 
       struct timespec wait;
-      wait.tv_sec = 0
+      wait.tv_sec = 0;
       wait.tv_nsec = rand() % 10000000;
       
       nanosleep(&wait, NULL);
