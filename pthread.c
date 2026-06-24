@@ -1,13 +1,14 @@
 // Based on code by Sam Siewert
 // Modified by Phil Orlando for quiz 2 and again modified for the midterm
-// modeled after 
+// modeled after simplethread-affinity-fifo
+// compiled with gcc pthread.c -o pthread
 
 
 #include <pthread.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <sched.h>
-#include <unistd.h>
+
 
 #define NUM_THREADS 3
 #define SCHED_POLICY SCHED_FIFO;
@@ -24,7 +25,7 @@ typedef struct
 //
 pthread_t threads[NUM_THREADS];
 threadParams_t threadParams[NUM_THREADS];
-pthread_attr_t fifo_sched_attr;
+pthread_attr_t max_sched_attr, mid_sched_attr, low_sched_attr;
 struct sched_param max_param, mid_param, low_param; 
 
 
@@ -67,42 +68,47 @@ int main (int argc, char *argv[])
 {
    int i = 0;
     // set scheduler i think
-   pthread_attr_init(&fifo_sched_attr);
-   pthread_attr_setschedpolicy(&fifo_sched_attr, SCHED_FIFO);
+   
 
 
 
    // thread 0 1-99
+   pthread_attr_init(&max_sched_attr);
+   pthread_attr_setschedpolicy(&max_sched_attr, SCHED_POLICY);
    max_param.sched_priority = 99;
-   pthread_attr_setschedparam(&fifo_sched_attr, &max_param);
+   pthread_attr_setschedparam(&max_sched_attr, &max_param);
 
 
 
    pthread_create(&threads[0],   // pointer to thread descriptor
-                      &fifo_sched_attr,     // use default attributes
+                      &max_sched_attr,     // use default attributes
                       counterThread, // thread function entry point
                       (void *)&(threadParams[0]) // parameters to pass in
                      );
 
 
    // thread 1 100-199
+   pthread_attr_init(&mid_sched_attr);
+   pthread_attr_setschedpolicy(&mid_sched_attr, SCHED_POLICY);
    mid_param.sched_priority = 50;
-   pthread_attr_setschedparam(&fifo_sched_attr, &mid_param);
+   pthread_attr_setschedparam(&mid_sched_attr, &mid_param);
 
 
    pthread_create(&threads[1],   // pointer to thread descriptor
-                      &fifo_sched_attr,     // use default attributes
+                      &mid_sched_attr,     // use default attributes
                       counterThread, // thread function entry point
                       (void *)&(threadParams[1]) // parameters to pass in
                      );
 
    // thread 2 200-199
+   pthread_attr_init(&low_sched_attr);
+   pthread_attr_setschedpolicy(&low_sched_attr, SCHED_POLICY);
    low_param.sched_priority = 1;
-   pthread_attr_setschedparam(&fifo_sched_attr, &low_param);
+   pthread_attr_setschedparam(&low_sched_attr, &low_param);
 
 
    pthread_create(&threads[2],   // pointer to thread descriptor
-                      &fifo_sched_attr,    // use default attributes
+                      &low_sched_attr,    // use default attributes
                       counterThread, // thread function entry point
                       (void *)&(threadParams[2]) // parameters to pass in
                      );
