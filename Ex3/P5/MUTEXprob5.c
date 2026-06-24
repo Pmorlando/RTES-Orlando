@@ -16,6 +16,8 @@ typedef struct {
 Position position;
 pthread_mutex_t mutexsem = PTHREAD_MUTEX_INITIALIZER;
 
+double runtime = 30;//shortened run time
+
 void *writepos(void *arg)
 {
   Position *pos = (Position *)arg;
@@ -24,13 +26,16 @@ void *writepos(void *arg)
 
   clock_gettime(CLOCK_MONOTONIC, &startwrite); //initial time start for writing thread
   writeagain = startwrite;
+  printf("Writer thread intitialized at %ld sec %ld nsec.\n",
+          startwrite.tv_sec,
+          startwrite.tv_nsec);// added initilization print
 
   while(1) 
   {
     struct timespec curr_time, timeleft;
     clock_gettime(CLOCK_MONOTONIC, &curr_time); //getting current time of loop
     timeleft.tv_sec = curr_time.tv_sec - startwrite.tv_sec;
-    if(timeleft.tv_sec>= 180) break; //180 sec run time 
+    if(timeleft.tv_sec>= runtime) break; //180 sec run time 
     
     lat = 1.5*timeleft.tv_sec + 15;//linear operations to the data
     lon = 2*timeleft.tv_sec +4;
@@ -49,12 +54,12 @@ void *writepos(void *arg)
             pos->altitude); // print out what is written to global data 
     
     
-
-    writeagain.tv_sec += 15; // pause with mutex locked to trigger read timeout
+    printf("writer holding mutex for 12 sec pause to trigger timeout\n");
+    writeagain.tv_sec += 12; // pause with mutex locked to trigger read timeout
     clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &writeagain, NULL);
-    pthread_mutex_unlock(&mutexsem); // unlock mutex
-    
-    writeagain.tv_sec += 5; // pause to let read see changes
+    pthread_mutex_unlock(&mutexsem); // unlock mutex to let read happen
+    printf("writer unlocked mutex\n");
+    writeagain.tv_sec += 1; // pause with mutex unlocked to let read see changes
     clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &writeagain, NULL);
   }
   return NULL;
@@ -68,16 +73,20 @@ void *readpos(void *arg)
 
   clock_gettime(CLOCK_MONOTONIC, &startread);// read thread start time
   readagain = startread;
+  printf("Reader thread intitialized at %ld sec %ld nsec.\n",
+          startread.tv_sec,
+          startread.tv_nsec);// added initilization print
 
   while(1) 
   {
      
     struct timespec curr_time;
     clock_gettime(CLOCK_MONOTONIC, &curr_time);
-    if((curr_time.tv_sec - startread.tv_sec) >= 180) break; //180 sec run time
+    if((curr_time.tv_sec - startread.tv_sec) >= runtime) break; //180 sec run time
     
     struct timespec timerwait;
-    timerwait.tv_sec = curr_time.tv_sec + 10;
+    clock_gettime(CLOCK_REALTIME, &timerwait);// need to use realtime clock for timedlock
+    timerwait.tv_sec += 10; //10 second timer for timedlock
 
     int noget = pthread_mutex_timedlock(&mutexsem,&timerwait);//try to access mutex for 10 sec
     
@@ -97,14 +106,14 @@ void *readpos(void *arg)
               localcopy.logtime.tv_nsec);
       pthread_mutex_unlock(&mutexsem); // unlock the mutex
     
-      readagain.tv_sec += 1;// sleep for 1 sec to make more constant checking
+      readagain.tv_sec = curr_time.tv_sec + 1;// sleep for 1 sec to make more constant checking
       clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &readagain, NULL);
     }
-    else if(noget == ETIMEDOUT)
+    else if(noget == ETIMEDOUT)// if timeout happens this is error code
     {
       struct timespec timeout;
-      clock_gettime(CLOCK_MONOTONIC, &timeout); 
-      printf("No new data available %ld sec %ld nsec\n",
+      clock_gettime(CLOCK_MONOTONIC, &timeout); // get new time for when timeout happens
+      printf("No new data available at %ld sec %ld nsec\n",
               timeout.tv_sec,
               timeout.tv_nsec);
     }
