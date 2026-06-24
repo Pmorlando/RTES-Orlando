@@ -10,8 +10,8 @@
 #include <sched.h>
 
 
-#define NUM_THREADS 3;
-#define SCHED_POLICY SCHED_FIFO;
+#define NUM_THREADS 3
+#define SCHED_POLICY SCHED_FIFO
 
 
 typedef struct
