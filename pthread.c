@@ -65,7 +65,8 @@ void *counterThread(void *threadp)
 
 int main (int argc, char *argv[])
 {
-   // set scheduler i think
+   int i = 0;
+    // set scheduler i think
    pthread_attr_init(&fifo_sched_attr);
    pthread_attr_setschedpolicy(&fifo_sched_attr, SCHED_FIFO);
 
