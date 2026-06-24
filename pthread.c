@@ -73,7 +73,7 @@ int main (int argc, char *argv[])
 
    // thread 0 1-99
    max_param.sched_priority = 99;
-   pthread_attr_setschedparam(&fifo_sched_attr, &max_param)
+   pthread_attr_setschedparam(&fifo_sched_attr, &max_param);
 
 
 
@@ -86,7 +86,7 @@ int main (int argc, char *argv[])
 
    // thread 1 100-199
    mid_param.sched_priority = 50;
-   pthread_attr_setschedparam(&fifo_sched_attr, &mid_param)
+   pthread_attr_setschedparam(&fifo_sched_attr, &mid_param);
 
 
    pthread_create(&threads[1],   // pointer to thread descriptor
@@ -97,7 +97,7 @@ int main (int argc, char *argv[])
 
    // thread 2 200-199
    low_param.sched_priority = 1;
-   pthread_attr_setschedparam(&fifo_sched_attr, &low_param)
+   pthread_attr_setschedparam(&fifo_sched_attr, &low_param);
 
 
    pthread_create(&threads[2],   // pointer to thread descriptor
