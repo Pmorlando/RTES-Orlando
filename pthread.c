@@ -24,7 +24,7 @@ typedef struct
 //
 pthread_t threads[NUM_THREADS];
 threadParams_t threadParams[NUM_THREADS];
-pthreads_attr_t fifo_sched_attr;
+pthread_attr_t fifo_sched_attr;
 struct sched_param max_param, mid_param, low_param; 
 
 
