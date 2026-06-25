@@ -25,7 +25,8 @@ pthread_attr_t orig_sched_attr;
 struct sched_param fifo_param;
 
 //#define MAX (400ULL)
-#define MAX (4000000ULL)
+
+#define MAX (400ULL)
 //#define MAX (10000000000ULL)
 #define CODE_LENGTH ((sizeof(unsigned char))*8ULL)
 #define SCHED_POLICY SCHED_RR
