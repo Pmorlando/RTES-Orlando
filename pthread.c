@@ -3,6 +3,8 @@
 // modeled after simplethread-affinity-fifo
 // compiled with gcc pthread.c -o pthread
 
+// stuck with 3 1-99 sums not sure how to fix 
+
 
 #include <pthread.h>
 #include <stdlib.h>
@@ -62,57 +64,45 @@ void *counterThread(void *threadp)
            threadParams->threadIdx, sum);
 }
 
+void set_scheduler(void)
+{
+    int max_prio, scope, rc;
 
+    print_scheduler();
+
+    pthread_attr_init(&fifo_sched_attr);
+    pthread_attr_setinheritsched(&fifo_sched_attr, PTHREAD_EXPLICIT_SCHED);
+    pthread_attr_setschedpolicy(&fifo_sched_attr, SCHED_POLICY);
+
+    max_prio=sched_get_priority_min(SCHED_POLICY);
+    fifo_param.sched_priority=max_prio;    
+
+    if((rc=sched_setscheduler(getpid(), SCHED_POLICY, &fifo_param)) < 0)
+        perror("sched_setscheduler");
+
+    pthread_attr_setschedparam(&fifo_sched_attr, &fifo_param);
+
+    print_scheduler();
+}
 
 int main (int argc, char *argv[])
 {
    int i = 0;
-    // set scheduler i think
+    // set scheduler 
+    set_scheduler();
+
+    for(i=0; i < NUM_THREADS; i++)
+   {
+       threadParams[i].threadIdx=i;
+
+       pthread_create(&threads[i],   // pointer to thread descriptor
+                      (void *)0,     // use default attributes
+                      counterThread, // thread function entry point
+                      (void *)&(threadParams[i]) // parameters to pass in
+                     );
+
+   }
    
-
-
-
-   // thread 0 1-99
-   pthread_attr_init(&max_sched_attr);
-   pthread_attr_setschedpolicy(&max_sched_attr, SCHED_POLICY);
-   max_param.sched_priority = 99;
-   pthread_attr_setschedparam(&max_sched_attr, &max_param);
-
-
-
-   pthread_create(&threads[0],   // pointer to thread descriptor
-                      &max_sched_attr,     // use default attributes
-                      counterThread, // thread function entry point
-                      (void *)&(threadParams[0]) // parameters to pass in
-                     );
-
-
-   // thread 1 100-199
-   pthread_attr_init(&mid_sched_attr);
-   pthread_attr_setschedpolicy(&mid_sched_attr, SCHED_POLICY);
-   mid_param.sched_priority = 50;
-   pthread_attr_setschedparam(&mid_sched_attr, &mid_param);
-
-
-   pthread_create(&threads[1],   // pointer to thread descriptor
-                      &mid_sched_attr,     // use default attributes
-                      counterThread, // thread function entry point
-                      (void *)&(threadParams[1]) // parameters to pass in
-                     );
-
-   // thread 2 200-199
-   pthread_attr_init(&low_sched_attr);
-   pthread_attr_setschedpolicy(&low_sched_attr, SCHED_POLICY);
-   low_param.sched_priority = 1;
-   pthread_attr_setschedparam(&low_sched_attr, &low_param);
-
-
-   pthread_create(&threads[2],   // pointer to thread descriptor
-                      &low_sched_attr,    // use default attributes
-                      counterThread, // thread function entry point
-                      (void *)&(threadParams[2]) // parameters to pass in
-                     );
-
 
 
 
