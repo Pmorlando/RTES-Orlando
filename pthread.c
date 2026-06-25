@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <sched.h>
+#include <unistd.h>
 
 
 #define NUM_THREADS 3
