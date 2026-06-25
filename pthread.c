@@ -27,8 +27,8 @@ typedef struct
 //
 pthread_t threads[NUM_THREADS];
 threadParams_t threadParams[NUM_THREADS];
-pthread_attr_t max_sched_attr, mid_sched_attr, low_sched_attr;
-struct sched_param max_param, mid_param, low_param; 
+pthread_attr_t fifo_sched_attr;
+struct sched_param fifo_param; 
 
 
 
@@ -96,7 +96,7 @@ int main (int argc, char *argv[])
        threadParams[i].threadIdx=i;
 
        pthread_create(&threads[i],   // pointer to thread descriptor
-                      (void *)0,     // use default attributes
+                      &fifo_sched_attr,     // use default attributes
                       counterThread, // thread function entry point
                       (void *)&(threadParams[i]) // parameters to pass in
                      );
