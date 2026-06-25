@@ -68,8 +68,6 @@ void set_scheduler(void)
 {
     int max_prio, scope, rc;
 
-    print_scheduler();
-
     pthread_attr_init(&fifo_sched_attr);
     pthread_attr_setinheritsched(&fifo_sched_attr, PTHREAD_EXPLICIT_SCHED);
     pthread_attr_setschedpolicy(&fifo_sched_attr, SCHED_POLICY);
