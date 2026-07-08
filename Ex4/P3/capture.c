@@ -11,6 +11,8 @@
  *
  *      This program is provided with the V4L2 API
  * see http://linuxtv.org/docs.php for more information
+ * 
+ * Used by Phil Orlando for Exercise 4
  */
 
 #include <stdio.h>
