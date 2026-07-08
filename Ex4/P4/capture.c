@@ -73,7 +73,7 @@ static int              out_buf;
 static int              force_format=1;
 static int              frame_count = (189);// running with the default 189 frames. 
 
-static double ppmtotal =0, sharptotal =0, sharpbest = 0;
+static double ppmtotal =0, sharptotal =0, sharpbest = 100000.0;
 static unsigned long sharpcount = 0, ppmcount = 0;
 
 static void errno_exit(const char *s)
@@ -134,18 +134,18 @@ static void sharpenimg(unsigned char *rgb, unsigned char *sharp, int width, int 
 {
     int x, y, c;
     
-    for( y=1; y < height -1, y++) // iterating through y axis and avoiding first and last with no pixels to fill psf
+    for( y=1; y < height -1; y++) // iterating through y axis and avoiding first and last with no pixels to fill psf
     {
-        for(x=1, x <width -1, x++) // same here for x axis
+        for(x=1; x <width -1; x++) // same here for x axis
         {
-            for(c=0,c<3,c++)//iterate each color RGB
+            for(c=0; c<3; c++)//iterate each color RGB
             {
                 // using psf [[0, -1, 0],[-1, 5, -1],[0, -1, 0]] but written out for the 5 pixels 
                 int center = (y*width +x)*3 +c;
                 int up = ((y-1)*width + x)*3 +c;
                 int down = ((y+1)*width + x)*3 +c;
-                int left = (y*width = (x-1))*3 +c;
-                int right = (y*width = (x+1))*3 +c;
+                int left = (y*width + (x-1))*3 +c;
+                int right = (y*width + (x+1))*3 +c;
                 
                 int newval = 5*rgb[center] - rgb[up] - rgb[down] - rgb[left] - rgb[right];
                 if(newval>255) newval=255;
@@ -244,7 +244,7 @@ static void process_image(const void *p, int size)
     if(fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_GREY)
     {
         printf("Dump graymap as-is size %d\n", size);
-        dump_pgm(p, size, framecnt, &frame_time);
+        dump_ppm(p, size, framecnt, &frame_time);
     }
 
     else if(fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_YUYV) // doing both ppm and pgm each frame and storing that time.
@@ -273,10 +273,6 @@ static void process_image(const void *p, int size)
             
             dt = (double)(t1.tv_sec - t0.tv_sec) * 1000.0 + (double)(t1.tv_nsec - t0.tv_nsec) /1000000;
             ppmtotal += dt;
-            if(dt > ppmworst)
-            {
-                ppmworst = dt;
-            }
             ppmcount++;
         }
                
@@ -286,7 +282,7 @@ static void process_image(const void *p, int size)
         {
             clock_gettime(CLOCK_MONOTONIC, &t0);
             sharpenimg(bigbuffer, sharpbuff, HRES, VRES);
-            dump_ppm(sharpbuff, ((size*6)/4), framecnt+10000, &frametime)
+            dump_ppm(sharpbuff, ((size*6)/4), framecnt+10000, &frame_time);
             clock_gettime(CLOCK_MONOTONIC, &t1);
             syslog(LOG_INFO, "sharpen RGB image to YY size %d\n", size);
             
@@ -980,10 +976,10 @@ int main(int argc, char **argv)
                 ppmcount,
                 1000.0 /(ppmtotal / ppmcount));
     }
-    if(pgmcount > 0)
+    if(sharpcount > 0)
     {
         syslog(LOG_INFO, "sharp processing and write-back: n=%lu avg FPS = %.2f, best FPS = %.2f ",
-                sharpcountcount,
+                sharpcount,
                 1000.0 /(sharptotal / sharpcount),
                 1000.0 /sharpbest);
     }
