@@ -71,7 +71,7 @@ struct buffer          *buffers;
 static unsigned int     n_buffers;
 static int              out_buf;
 static int              force_format=1;
-static int              frame_count = (189);// running with the default 189 frames. 
+static int              frame_count = (1800);// running with the default 189 frames. 
 
 static double ppmtotal =0, sharptotal =0, sharpbest = 100000.0;
 static unsigned long sharpcount = 0, ppmcount = 0;
@@ -97,15 +97,16 @@ static int xioctl(int fh, int request, void *arg)
 }
 
 char ppm_header[]="P6\n#9999999999 sec 9999999999 msec \n"HRES_STR" "VRES_STR"\n255\n";
-char ppm_dumpname[]="frames/test0000.ppm";
 
-static void dump_ppm(const void *p, int size, unsigned int tag, struct timespec *time)
+static void dump_ppm(const void *p, int size, unsigned int tag, struct timespec *time, char *prefix)
 {
     int written, i, total, dumpfd;
-   
-    snprintf(&ppm_dumpname[11], 9, "%04d", tag);
-    strncat(&ppm_dumpname[15], ".ppm", 5);
-    dumpfd = open(ppm_dumpname, O_WRONLY | O_NONBLOCK | O_CREAT, 00666);
+    char dumpname[64]; // renaming so i can save b4 and after images
+    
+    snprintf(dumpname, sizeof(dumpname), "frames/%s%04d.ppm", prefix, tag);
+    
+    dumpfd = open(dumpname, O_WRONLY | O_NONBLOCK | O_CREAT, 00666);
+        
 
     snprintf(&ppm_header[4], 11, "%010d", (int)time->tv_sec);
     strncat(&ppm_header[14], " sec ", 5);
@@ -241,13 +242,7 @@ static void process_image(const void *p, int size)
     // processing you wish.
     //
 
-    if(fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_GREY)
-    {
-        printf("Dump graymap as-is size %d\n", size);
-        dump_ppm(p, size, framecnt, &frame_time);
-    }
-
-    else if(fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_YUYV) // doing both ppm and pgm each frame and storing that time.
+    if(fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_YUYV) // doing both ppm and pgm each frame and storing that time.
     {
         struct timespec t0, t1;
         double dt;
@@ -266,7 +261,7 @@ static void process_image(const void *p, int size)
         {
             clock_gettime(CLOCK_MONOTONIC, &t0);
             
-            dump_ppm(bigbuffer, ((size*6)/4), framecnt, &frame_time);
+            dump_ppm(bigbuffer, ((size*6)/4), framecnt, &frame_time, "RGB");
             clock_gettime(CLOCK_MONOTONIC, &t1);
             syslog(LOG_INFO, "Dump YUYV converted to RGB size %d\n", size);
             
@@ -276,13 +271,14 @@ static void process_image(const void *p, int size)
             ppmcount++;
         }
                
-        // changing to sharpen 
+        // changing to sharpen processing
         
         if(framecnt > -1)
         {
             clock_gettime(CLOCK_MONOTONIC, &t0);
             sharpenimg(bigbuffer, sharpbuff, HRES, VRES);
-            dump_ppm(sharpbuff, ((size*6)/4), framecnt+10000, &frame_time);
+            // trying without writeback
+            //dump_ppm(sharpbuff, ((size*6)/4), framecnt, &frame_time, "sharp");
             clock_gettime(CLOCK_MONOTONIC, &t1);
             syslog(LOG_INFO, "sharpen RGB image to YY size %d\n", size);
             
