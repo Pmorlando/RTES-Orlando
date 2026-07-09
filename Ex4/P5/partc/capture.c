@@ -32,6 +32,7 @@
 #include <sys/ioctl.h>
 #include <syslog.h>
 #include <linux/videodev2.h>
+#include <sched.h>
 
 #include <time.h>
 
@@ -76,6 +77,26 @@ static int              frame_count = (1809);// running with the default 189 fra
 static double acqworst =0, procworst = 0, writeworst = 0;
 static double proctotal = 0, acqtotal = 0, writetotal = 0;
 static unsigned long proccount = 0, writecount =0, acqcount =0, longwrite = 0;
+// adding for deadline checking
+static double lastacqdt =0;
+static unsigned long deadlinemisscnt =0;
+static double totalworst =0;
+
+static void setprio(void)
+{
+    struct sched_param param;
+    param.sched_priority = sched_get_priority_max(SCHED_FIFO) -1;
+    
+    if(sched_setscheduler(0, SCHED_FIFO, &param) != 0)
+    {
+        syslog(LOG_INFO, "set sched failed");
+    }
+    else
+    {
+        syslog(LOG_INFO, "sched prio %d", param.sched_priority);
+    }
+}
+
 
 static void errno_exit(const char *s)
 {
@@ -257,7 +278,7 @@ static void process_image(const void *p, int size)
     if(fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_YUYV) // doing both ppm and pgm each frame and storing that time.
     {
         struct timespec t0, t1;
-        double dt;
+        double procdt, writedt;
         
         // Pixels are YU and YV alternating, so YUYV which is 4 bytes
         // We want RGB, so RGBRGB which is 6 bytes
@@ -277,9 +298,9 @@ static void process_image(const void *p, int size)
             sharpenimg(bigbuffer, sharpbuff, HRES, VRES);
             clock_gettime(CLOCK_MONOTONIC, &t1);
             
-            dt = (double)(t1.tv_sec - t0.tv_sec) * 1000.0 + (double)(t1.tv_nsec - t0.tv_nsec) /1000000;
-            proctotal += dt;
-            if(dt > procworst) procworst = dt;
+            procdt = (double)(t1.tv_sec - t0.tv_sec) * 1000.0 + (double)(t1.tv_nsec - t0.tv_nsec) /1000000;
+            proctotal += procdt;
+            if(procdt > procworst) procworst = procdt;
             proccount++;
             
             
@@ -287,18 +308,32 @@ static void process_image(const void *p, int size)
             dump_ppm(sharpbuff, ((size*6)/4), framecnt, &frame_time, "sharp");
             clock_gettime(CLOCK_MONOTONIC, &t1);
             
-            dt = (double)(t1.tv_sec - t0.tv_sec) * 1000.0 + (double)(t1.tv_nsec - t0.tv_nsec) /1000000;
-            writetotal += dt;
-            if(dt>writeworst) 
+            writedt = (double)(t1.tv_sec - t0.tv_sec) * 1000.0 + (double)(t1.tv_nsec - t0.tv_nsec) /1000000;
+            writetotal += writedt;
+            if(writedt>writeworst) 
             {
-                writeworst = dt;
-                if(dt > 100.0) 
+                writeworst = writedt;
+                if(writedt > 100.0) 
                 {
                     longwrite++;
-                    syslog(LOG_INFO, "Write took %.3f ms for frame %d" ,dt, framecnt);
+                    syslog(LOG_INFO, "Write took %.3f ms for frame %d" ,writedt, framecnt);
                 }
             }
             writecount++;
+            
+            double totaldt = lastacqdt + procdt + writedt;
+            
+            // make log for the scatter plot
+            syslog(LOG_DEBUG, " Frame_timing %d %.3f", framecnt, totaldt);
+            // check if missed deadline of 50 ms
+            if(totaldt > 50)
+            {
+                deadlinemisscnt++;
+                syslog(LOG_INFO, "DEADLINE MISSED: frame: %d total time = %.3f ms",
+                            framecnt, 
+                            totaldt);
+            }
+            if(totaldt > totalworst) totalworst = totaldt;
         }
     }
 }
@@ -370,6 +405,7 @@ static int read_frame(void)
             acqtotal += acqdt;
             if(acqdt > acqworst) acqworst = acqdt;
             acqcount++;
+            lastacqdt = acqdt;
             
 
             assert(buf.index < n_buffers);
@@ -980,6 +1016,8 @@ int main(int argc, char **argv)
     open_device();
     init_device();
     start_capturing();
+    // set the sched fifo 
+    setprio();
 
     // service loop frame read
     mainloop();
@@ -1021,6 +1059,13 @@ int main(int argc, char **argv)
     if(longwrite >0)
     {
         syslog(LOG_INFO, "writing timesthat took over 100ms occured %d times", longwrite);
+    }
+    
+    if(deadlinemisscnt > 0)
+    {
+        syslog(LOG_INFO, "deadline of 50 ms missed %d times with worst miss of %.3f ms",
+                deadlinemisscnt,
+                totalworst);
     }
 
     return 0;
