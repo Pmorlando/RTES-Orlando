@@ -73,9 +73,9 @@ static int              out_buf;
 static int              force_format=1;
 static int              frame_count = (1809);// running with the default 189 frames. 
 
-static double acqworst =0, procworst = 0, writeworst = 0, ppmworst =0;
-static double proctotal = 0, acqtotal = 0, writetotal = 0, ppmtotal =0;
-static unsigned long proccount = 0, writecount =0, acqcount =0, longwrite = 0, ppmcount =0;
+static double acqworst =0, procworst = 0, writeworst = 0;
+static double proctotal = 0, acqtotal = 0, writetotal = 0;
+static unsigned long proccount = 0, writecount =0, acqcount =0, longwrite = 0;
 
 static void errno_exit(const char *s)
 {
@@ -269,20 +269,10 @@ static void process_image(const void *p, int size)
             yuv2rgb(y2_temp, u_temp, v_temp, &bigbuffer[newi+3], &bigbuffer[newi+4], &bigbuffer[newi+5]);
         }
         
-        // added the captured RGB back to writing
-        if(framecnt > -1) 
-        {
-            // captured image write time
-            clock_gettime(CLOCK_MONOTONIC, &t0);
-            
-            dump_ppm(bigbuffer, ((size*6)/4), framecnt, &frame_time, "RGB");
-            clock_gettime(CLOCK_MONOTONIC, &t1);
-            
-            dt = (double)(t1.tv_sec - t0.tv_sec) * 1000.0 + (double)(t1.tv_nsec - t0.tv_nsec) /1000000;
-            ppmtotal += dt;
-            if(dt > ppmworst) ppmworst = dt; 
-            ppmcount++;
+        // just sharpen processing
         
+        if(framecnt > -1)
+        {
             clock_gettime(CLOCK_MONOTONIC, &t0);
             sharpenimg(bigbuffer, sharpbuff, HRES, VRES);
             clock_gettime(CLOCK_MONOTONIC, &t1);
@@ -999,14 +989,6 @@ int main(int argc, char **argv)
     uninit_device();
     close_device();
     
-    if(ppmcount > 0)
-    {
-        syslog(LOG_INFO, "Capture frame write: n=%lu avg FPS = %.2f, worst time %.3f ms, worst FPS = %.2f ",
-                ppmcount,
-                1000.0 /(ppmtotal / ppmcount),
-                ppmworst,
-                1000.0 /ppmworst);
-    }
     if(acqcount > 0)
     {
         syslog(LOG_INFO, "Frame acquistion: n=%lu avg FPS = %.2f, worst time %.3f ms, worst FPS = %.2f ",
@@ -1031,7 +1013,7 @@ int main(int argc, char **argv)
                 writeworst,
                 1000.0 /writeworst);
     }
-    double overallavgtime = (acqtotal/acqcount) + (proctotal/proccount) + (writetotal/writecount) + (ppmtotal/ppmcount);
+    double overallavgtime = (acqtotal/acqcount) + (proctotal/proccount) + (writetotal/writecount);
     syslog(LOG_INFO, "overall avg time = %.3f ms per frame and %.2f FPS",
                 overallavgtime, 
                 1000.0/overallavgtime);
