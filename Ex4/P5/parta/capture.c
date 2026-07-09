@@ -75,7 +75,7 @@ static int              frame_count = (1809);// running with the default 189 fra
 
 static double acqworst =0, procworst = 0, writeworst = 0;
 static double proctotal = 0, acqtotal = 0, writetotal = 0;
-static unsigned long proccount = 0, writecount =0, acqcount =0;
+static unsigned long proccount = 0, writecount =0, acqcount =0, longwrite = 0;
 
 static void errno_exit(const char *s)
 {
@@ -107,6 +107,11 @@ static void dump_ppm(const void *p, int size, unsigned int tag, struct timespec 
     snprintf(dumpname, sizeof(dumpname), "frames/%s%04d.ppm", prefix, tag);
     
     dumpfd = open(dumpname, O_WRONLY | O_NONBLOCK | O_CREAT, 00666);
+    if(dumpfd < 0)
+    {
+        syslog(LOG_ERR, "failed to open %s: %s", dumpname, strerror(errno));
+        return;
+    }
         
 
     snprintf(&ppm_header[4], 11, "%010d", (int)time->tv_sec);
@@ -120,6 +125,12 @@ static void dump_ppm(const void *p, int size, unsigned int tag, struct timespec 
     do
     {
         written=write(dumpfd, p, size);
+        if(written <0)
+        {
+            if(errno == EINTR) continue;
+            syslog(LOG_ERR, "write failed %s" , strerror(errno));
+            break;
+        }
         total+=written;
     } while(total < size);
 
@@ -258,9 +269,7 @@ static void process_image(const void *p, int size)
             yuv2rgb(y2_temp, u_temp, v_temp, &bigbuffer[newi+3], &bigbuffer[newi+4], &bigbuffer[newi+5]);
         }
         
-        
-               
-        // changing to sharpen processing
+        // just sharpen processing
         
         if(framecnt > -1)
         {
@@ -280,7 +289,15 @@ static void process_image(const void *p, int size)
             
             dt = (double)(t1.tv_sec - t0.tv_sec) * 1000.0 + (double)(t1.tv_nsec - t0.tv_nsec) /1000000;
             writetotal += dt;
-            if(dt>writeworst) writeworst = dt;
+            if(dt>writeworst) 
+            {
+                writeworst = dt;
+                if(dt > 100.0) 
+                {
+                    longwrite++;
+                    syslog(LOG_INFO, "Write took %.3f ms for frame %d" ,dt, framecnt);
+                }
+            }
             writecount++;
         }
     }
@@ -1000,6 +1017,11 @@ int main(int argc, char **argv)
     syslog(LOG_INFO, "overall avg time = %.3f ms per frame and %.2f FPS",
                 overallavgtime, 
                 1000.0/overallavgtime);
+                
+    if(longwrite >0)
+    {
+        syslog(LOG_INFO, "writing timesthat took over 100ms occured %d times", longwrite);
+    }
 
     return 0;
 }
