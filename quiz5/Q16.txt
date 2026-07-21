@@ -1,0 +1,35 @@
+**** TEST CASE 1: bit 8 is d01 @ position 0 ******
+WRITE : COMPUTED PARITY = codeword=01110
+WRITE : PARITY          = addr=0x7fde8384b8 (offset=0) 011_1___0____
+WRITE : DATA            = addr=0x7fde8384b8 (offset=0) ___1_101_0101    => 1010 1011 [0xAB]
+WRITE : ECODED          = addr=0x7fde8384b8 (offset=0) 0111110100101
+
+PARITY: request=8
+PARITY: bit to flip=3
+PARITY: original byte    = 0x27
+PARITY: flipped bit byte = 0x2F
+
+READ  : COMPUTED PARITY = codeword=01110
+READ  : PARITY          = addr=0x7fde8384b8 (offset=0) 011_1___1____
+READ  : DATA            = addr=0x7fde8384b8 (offset=0) ___1_101_0101    => 1010 1011 [0xAB]
+READ  : ECODED          = addr=0x7fde8384b8 (offset=0) 0111110110101
+READ  : SYNDROME        = codeword=00001
+READ  : PW              = codeword=00000
+READ  : PW2             = codeword=10000
+
+SBE @ 8
+
+PARITY: request=8
+PARITY: bit to flip=3
+PARITY: original byte    = 0x2F
+PARITY: flipped bit byte = 0x27
+
+READ  : COMPUTED PARITY = codeword=01110
+READ  : PARITY          = addr=0x7fde8384b8 (offset=0) 011_1___0____
+READ  : DATA            = addr=0x7fde8384b8 (offset=0) ___1_101_0101    => 1010 1011 [0xAB]
+READ  : ECODED          = addr=0x7fde8384b8 (offset=0) 0111110100101
+READ  : SYNDROME        = codeword=00000
+READ  : PW              = codeword=00000
+READ  : PW2             = codeword=00000
+
+**** END TEST CASE 1 *****************************
