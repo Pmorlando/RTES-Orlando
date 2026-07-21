@@ -1,5 +1,5 @@
 // Sam Siewert, December 2020
-//
+// Modified by Phil Orlando for quiz 5
 // Sequencer Generic Demonstration
 //
 // The purpose of this code is to provide an example for how to best
@@ -315,7 +315,7 @@ void main(void)
  
     // Create Sequencer thread, which like a cyclic executive, is highest prio
     printf("Start sequencer\n");
-    threadParams[0].sequencePeriods=2000;
+    threadParams[0].sequencePeriods=3600; // for 60 hz to do 60 sec
 
     // run sequencer on core 1
     CPU_ZERO(&threadcpu);
@@ -344,7 +344,7 @@ void main(void)
 void *Sequencer(void *threadp)
 {
     struct timespec current_time_val;
-    struct timespec delay_time = {0,10000000}; // delay for 10.0 msec, 100 Hz
+    struct timespec delay_time = {0,16666667}; // delay for 16.67 msec, 60 Hz
     struct timespec remaining_time;
     double current_realtime;
     int rc;
@@ -379,14 +379,14 @@ void *Sequencer(void *threadp)
 
         // Release each service at a sub-rate of the generic sequencer rate
 
-        // Servcie_1 = RT_MAX-1	@ 50 Hz
+        // Servcie_1 = RT_MAX-1	@ 30 Hz
         if((seqCnt % 2) == 0) sem_post(&semS1);
 
-        // Service_2 = RT_MAX-2	@ 20 Hz
-        if((seqCnt % 5) == 0) sem_post(&semS2);
+        // Service_2 = RT_MAX-2	@ 10 Hz
+        if((seqCnt % 6) == 0) sem_post(&semS2);
 
-        // Service_3 = RT_MAX-3	@ 10 Hz
-        if((seqCnt % 10) == 0) sem_post(&semS3);
+        // Service_3 = RT_MAX-3	@ 1 Hz
+        if((seqCnt % 60) == 0) sem_post(&semS3);
 
 
     } while(!abortTest && (seqCnt < threadParams->sequencePeriods));
@@ -422,7 +422,7 @@ void *Service_1(void *threadp)
 
 	// on order of up to milliseconds of latency to get time
         clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
-        syslog(LOG_CRIT, "S1 50 Hz on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S1Cnt, current_realtime-start_realtime);
+        syslog(LOG_CRIT, "S1 30 Hz on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S1Cnt, current_realtime-start_realtime);
     }
 
     // Resource shutdown here
@@ -447,7 +447,7 @@ void *Service_2(void *threadp)
         S2Cnt++;
 
         clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
-        syslog(LOG_CRIT, "S2 20 Hz on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S2Cnt, current_realtime-start_realtime);
+        syslog(LOG_CRIT, "S2 10 Hz on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S2Cnt, current_realtime-start_realtime);
     }
 
     pthread_exit((void *)0);
@@ -470,7 +470,7 @@ void *Service_3(void *threadp)
         S3Cnt++;
 
         clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
-        syslog(LOG_CRIT, "S3 10 Hz on core %d forrelease %llu @ sec=%6.9lf\n", sched_getcpu(), S3Cnt, current_realtime-start_realtime);
+        syslog(LOG_CRIT, "S3 1 Hz on core %d forrelease %llu @ sec=%6.9lf\n", sched_getcpu(), S3Cnt, current_realtime-start_realtime);
     }
 
     pthread_exit((void *)0);
