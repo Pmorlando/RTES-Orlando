@@ -32,7 +32,6 @@
 #include <sys/ioctl.h>
 #include <syslog.h>
 #include <linux/videodev2.h>
-#include <sched.h>
 
 #include <time.h>
 
@@ -72,31 +71,10 @@ struct buffer          *buffers;
 static unsigned int     n_buffers;
 static int              out_buf;
 static int              force_format=1;
-static int              frame_count = (1809);// running with the default 189 frames. 
+static int              frame_count = (900);// running with the default 189 frames. 
 
-static double acqworst =0, procworst = 0, writeworst = 0;
-static double proctotal = 0, acqtotal = 0, writetotal = 0;
-static unsigned long proccount = 0, writecount =0, acqcount =0, longwrite = 0;
-// adding for deadline checking
-static double lastacqdt =0;
-static unsigned long deadlinemisscnt =0;
-static double totalworst =0;
-
-static void setprio(void)
-{
-    struct sched_param param;
-    param.sched_priority = sched_get_priority_max(SCHED_FIFO) -1;
-    
-    if(sched_setscheduler(0, SCHED_FIFO, &param) != 0)
-    {
-        syslog(LOG_INFO, "set sched failed");
-    }
-    else
-    {
-        syslog(LOG_INFO, "sched prio %d", param.sched_priority);
-    }
-}
-
+static double ppmtotal =0, sharptotal =0, sharpbest = 100000.0, frametotal = 0;
+static unsigned long sharpcount = 0, ppmcount = 0;
 
 static void errno_exit(const char *s)
 {
@@ -128,11 +106,6 @@ static void dump_ppm(const void *p, int size, unsigned int tag, struct timespec 
     snprintf(dumpname, sizeof(dumpname), "frames/%s%04d.ppm", prefix, tag);
     
     dumpfd = open(dumpname, O_WRONLY | O_NONBLOCK | O_CREAT, 00666);
-    if(dumpfd < 0)
-    {
-        syslog(LOG_ERR, "failed to open %s: %s", dumpname, strerror(errno));
-        return;
-    }
         
 
     snprintf(&ppm_header[4], 11, "%010d", (int)time->tv_sec);
@@ -146,15 +119,6 @@ static void dump_ppm(const void *p, int size, unsigned int tag, struct timespec 
     do
     {
         written=write(dumpfd, p, size);
-        fsync(dumpfd);
-        close(dumpfd);
-        
-        if(written <0)
-        {
-            if(errno == EINTR) continue;
-            syslog(LOG_ERR, "write failed %s" , strerror(errno));
-            break;
-        }
         total+=written;
     } while(total < size);
 
@@ -260,85 +224,36 @@ void yuv2rgb(int y, int u, int v, unsigned char *r, unsigned char *g, unsigned c
 int framecnt=-8;
 
 unsigned char bigbuffer[(1280*960)];
+static struct timespec lastframe_time;
+int firstframe = 0;
+
 
 static void process_image(const void *p, int size)
 {
-    int i, newi, newsize=0;
+    
     struct timespec frame_time;
-    int y_temp, y2_temp, u_temp, v_temp;
-    unsigned char *pptr = (unsigned char *)p;
-
+   
     // record when process was called
-    clock_gettime(CLOCK_REALTIME, &frame_time);    
+    clock_gettime(CLOCK_REALTIME, &frame_time);
 
     framecnt++;
-    syslog(LOG_INFO, "frame %d: ", framecnt);
-
-    // This just dumps the frame to a file now, but you could replace with whatever image
-    // processing you wish.
-    //
-
-    if(fmt.fmt.pix.pixelformat == V4L2_PIX_FMT_YUYV) // doing both ppm and pgm each frame and storing that time.
+    
+    if(firstframe == 1)
     {
-        struct timespec t0, t1;
-        double procdt, writedt;
-        
-        // Pixels are YU and YV alternating, so YUYV which is 4 bytes
-        // We want RGB, so RGBRGB which is 6 bytes
-        //
-        for(i=0, newi=0; i<size; i=i+4, newi=newi+6)
-        {
-            y_temp=(int)pptr[i]; u_temp=(int)pptr[i+1]; y2_temp=(int)pptr[i+2]; v_temp=(int)pptr[i+3];
-            yuv2rgb(y_temp, u_temp, v_temp, &bigbuffer[newi], &bigbuffer[newi+1], &bigbuffer[newi+2]);
-            yuv2rgb(y2_temp, u_temp, v_temp, &bigbuffer[newi+3], &bigbuffer[newi+4], &bigbuffer[newi+5]);
-        }
-        
-        // just sharpen processing
-        
-        if(framecnt > -1)
-        {
-            clock_gettime(CLOCK_MONOTONIC, &t0);
-            sharpenimg(bigbuffer, sharpbuff, HRES, VRES);
-            clock_gettime(CLOCK_MONOTONIC, &t1);
-            
-            procdt = (double)(t1.tv_sec - t0.tv_sec) * 1000.0 + (double)(t1.tv_nsec - t0.tv_nsec) /1000000;
-            proctotal += procdt;
-            if(procdt > procworst) procworst = procdt;
-            proccount++;
-            
-            
-            clock_gettime(CLOCK_MONOTONIC, &t0);
-            dump_ppm(sharpbuff, ((size*6)/4), framecnt, &frame_time, "sharp");
-            clock_gettime(CLOCK_MONOTONIC, &t1);
-            
-            writedt = (double)(t1.tv_sec - t0.tv_sec) * 1000.0 + (double)(t1.tv_nsec - t0.tv_nsec) /1000000;
-            writetotal += writedt;
-            if(writedt>writeworst) 
-            {
-                writeworst = writedt;
-                if(writedt > 100.0) 
-                {
-                    longwrite++;
-                    syslog(LOG_INFO, "Write took %.3f ms for frame %d" ,writedt, framecnt);
-                }
-            }
-            writecount++;
-            
-            double totaldt = lastacqdt + procdt + writedt;
-            
-            // make log for the scatter plot
-            syslog(LOG_DEBUG, " Frame_timing %d %.3f", framecnt, totaldt);
-            // check if missed deadline of 50 ms
-            if(totaldt > 50)
-            {
-                deadlinemisscnt++;
-                syslog(LOG_INFO, "DEADLINE MISSED: frame: %d total time = %.3f ms",
-                            framecnt, 
-                            totaldt);
-            }
-            if(totaldt > totalworst) totalworst = totaldt;
-        }
-    }
+		double dt = (frame_time.tv_sec - lastframe_time.tv_sec) * 1000.0 + 
+		(frame_time.tv_nsec - lastframe_time.tv_nsec)/1000000.0;
+		syslog(LOG_INFO, "frame %d: frame time %.3f, FPS = %.3f", 
+				framecnt, dt, 1000.0/ dt);
+		frametotal+=dt;
+	}
+	else
+	{
+		firstframe=1;
+	}
+	
+	lastframe_time = frame_time;
+    
+    
 }
 
 
@@ -347,7 +262,6 @@ static int read_frame(void)
 {
     struct v4l2_buffer buf;
     unsigned int i;
-    
 
     switch (io)
     {
@@ -379,9 +293,6 @@ static int read_frame(void)
 
             buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
             buf.memory = V4L2_MEMORY_MMAP;
-            
-            struct timespec acqt0, acqt1;
-            clock_gettime(CLOCK_MONOTONIC, &acqt0);
 
             if (-1 == xioctl(fd, VIDIOC_DQBUF, &buf))
             {
@@ -402,14 +313,6 @@ static int read_frame(void)
                         errno_exit("VIDIOC_DQBUF");
                 }
             }
-            
-            clock_gettime(CLOCK_MONOTONIC, &acqt1);
-            double acqdt = (double)(acqt1.tv_sec - acqt0.tv_sec) * 1000.0 + (double)(acqt1.tv_nsec - acqt0.tv_nsec) /1000000;
-            acqtotal += acqdt;
-            if(acqdt > acqworst) acqworst = acqdt;
-            acqcount++;
-            lastacqdt = acqdt;
-            
 
             assert(buf.index < n_buffers);
 
@@ -472,7 +375,7 @@ static void mainloop(void)
     // 250 million nsec is a 250 msec delay, for 4 fps
     // 1 sec for 1 fps
     //
-    read_delay.tv_sec=0.1; //made run faster
+    read_delay.tv_sec=0; //made run faster
     read_delay.tv_nsec=0;
 
     count = frame_count;
@@ -952,7 +855,6 @@ long_options[] = {
 
 int main(int argc, char **argv)
 {
-    openlog("p5-capture", LOG_PID, LOG_USER);
     if(argc > 1)
         dev_name = argv[1];
     else
@@ -1019,57 +921,29 @@ int main(int argc, char **argv)
     open_device();
     init_device();
     start_capturing();
-    // set the sched fifo 
-    setprio();
 
     // service loop frame read
     mainloop();
+    
+    syslog(LOG_INFO, "cap test n=%lu acg FPS = %.2f",
+			framecnt, 1000.0/(frametotal/frame_count));
 
     // shutdown of frame acquisition service
     stop_capturing();
     uninit_device();
     close_device();
-    
-    if(acqcount > 0)
+    if(ppmcount >0)
     {
-        syslog(LOG_INFO, "Frame acquistion: n=%lu avg FPS = %.2f, worst time %.3f ms, worst FPS = %.2f ",
-                acqcount,
-                1000.0 /(acqtotal / acqcount),
-                acqworst,
-                1000.0 /acqworst);
+        syslog(LOG_INFO, "PPM write-back: n=%lu avg FPS = %.2f",
+                ppmcount,
+                1000.0 /(ppmtotal / ppmcount));
     }
-    if(proccount > 0)
+    if(sharpcount > 0)
     {
-        syslog(LOG_INFO, "sharp processing: n=%lu avg FPS = %.2f, worst time %.3f ms, worst FPS = %.2f ",
-                proccount,
-                1000.0 /(proctotal / proccount),
-                procworst,
-                1000.0 /procworst);
+        syslog(LOG_INFO, "sharp processing and write-back: n=%lu avg FPS = %.2f, best FPS = %.2f ",
+                sharpcount,
+                1000.0 /(sharptotal / sharpcount),
+                1000.0 /sharpbest);
     }
-    if(writecount > 0)
-    {
-        syslog(LOG_INFO, "sharp writing: n=%lu avg FPS = %.2f, worst time %.3f ms, worst FPS = %.2f ",
-                writecount,
-                1000.0 /(writetotal / writecount),
-                writeworst,
-                1000.0 /writeworst);
-    }
-    double overallavgtime = (acqtotal/acqcount) + (proctotal/proccount) + (writetotal/writecount);
-    syslog(LOG_INFO, "overall avg time = %.3f ms per frame and %.2f FPS",
-                overallavgtime, 
-                1000.0/overallavgtime);
-                
-    if(longwrite >0)
-    {
-        syslog(LOG_INFO, "writing timesthat took over 100ms occured %d times", longwrite);
-    }
-    
-    if(deadlinemisscnt > 0)
-    {
-        syslog(LOG_INFO, "deadline of 50 ms missed %d times with worst miss of %.3f ms",
-                deadlinemisscnt,
-                totalworst);
-    }
-
     return 0;
 }

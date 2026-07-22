@@ -276,7 +276,7 @@ static void process_image(const void *p, int size)
         if(framecnt > -1)
         {
             clock_gettime(CLOCK_MONOTONIC, &t0);
-            sharpenimg(bigbuffer, sharpbuff, HRES, VRES);
+            //sharpenimg(bigbuffer, sharpbuff, HRES, VRES);
             // trying without writeback
             //dump_ppm(sharpbuff, ((size*6)/4), framecnt, &frame_time, "sharp");
             clock_gettime(CLOCK_MONOTONIC, &t1);
