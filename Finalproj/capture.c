@@ -766,19 +766,19 @@ static void init_device(void)
 
 	// hardcoding the FPS to be 30 hopefully
 
-    struct streamparm streamparm;
+    struct v4l2_streamparm streamparm;
     CLEAR(streamparm);
     memset(&streamparm, 0, sizeof(streamparm));
-    streamparm.type - V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    if(v4l2_ioctl(m_fd, VIDIOC_G_PARM, &streamparm) !=0)
+    streamparm.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    if(xioctl(fd, VIDIOC_G_PARM, &streamparm) !=0)
     {
         errno_exit("VIDIOC_G_PARM");
     }
 
-    streamparm.parm.capture.capturemode |= V4L2_CAP_TIMEPERFRAME;
-    streamparm.timeperframe.numerator = 1;
-    streamparm.timeperframe.denominator = 30;
-    if(v4l2_ioctl(descriptor, VIDEO_S_PARM, &streamparm) != 0)
+    
+    streamparm.parm.capture.timeperframe.numerator = 1;
+    streamparm.parm.capture.timeperframe.denominator = 30;
+    if(xioctl(fd, VIDIOC_S_PARM, &streamparm) != 0)
     {
         errno_exit("FPS hardcode fail");
     }
