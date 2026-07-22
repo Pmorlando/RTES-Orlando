@@ -17,6 +17,7 @@ all:	finalproj
 clean:
 	-rm -f *.o *.d
 	-rm -f finalproj
+	-rm -f sysloglast.txt
 
 distclean:
 	-rm -f *.o *.d

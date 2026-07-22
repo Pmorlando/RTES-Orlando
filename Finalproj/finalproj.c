@@ -45,7 +45,7 @@
 #define VRES 480
 #define HRES_STR "640"
 #define VRES_STR "480"
-#define diffbuffsize  5
+#define diffbuffsize  2
 
 // diff cap stuff 
 #define graysize (HRES*VRES)
@@ -817,6 +817,7 @@ static int singleframecap(void)
     int r;
 
     framecnt++;
+    
 
     FD_ZERO(&fds);
     FD_SET(fd, &fds);
@@ -853,6 +854,7 @@ static void diffstore(double value) // store last 5 diff values for comparison
 
 static int spikethensettle(void) // if frame after diff calc spike
 {
+    if(framecnt < 60) return 0;
     if(diffhistcount < diffbuffsize) return 0; // not enough values in the buffer to look at 
 
     int lastindex = (diffidx - 1 + diffbuffsize) % diffbuffsize; // finds last index and wraps if over 4
