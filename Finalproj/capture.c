@@ -12,7 +12,7 @@
  *      This program is provided with the V4L2 API
  * see http://linuxtv.org/docs.php for more information
  * 
- * Modified by Phil Orlando for exercise 4
+ * Modified by Phil Orlando for exercise 4 and then the standard Final Project
  */
 
 #include <stdio.h>
@@ -749,6 +749,7 @@ static void init_device(void)
 
         //fmt.fmt.pix.field       = V4L2_FIELD_INTERLACED;
         fmt.fmt.pix.field       = V4L2_FIELD_NONE;
+        // following code found at https://stackoverflow.com/questions/26108643/setting-frame-rate-on-logitech-c210-webcam-in-c-on-raspberry-pi-using-v4l2
 
         if (-1 == xioctl(fd, VIDIOC_S_FMT, &fmt))
                 errno_exit("VIDIOC_S_FMT");
@@ -762,6 +763,26 @@ static void init_device(void)
         if (-1 == xioctl(fd, VIDIOC_G_FMT, &fmt))
                     errno_exit("VIDIOC_G_FMT");
     }
+
+	// hardcoding the FPS to be 30 hopefully
+
+    struct streamparm streamparm;
+    CLEAR(streamparm);
+    memset(&streamparm, 0, sizeof(streamparm));
+    streamparm.type - V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    if(v4l2_ioctl(m_fd, VIDIOC_G_PARM, &streamparm) !=0)
+    {
+        errno_exit("VIDIOC_G_PARM");
+    }
+
+    streamparm.parm.capture.capturemode |= V4L2_CAP_TIMEPERFRAME;
+    streamparm.timeperframe.numerator = 1;
+    streamparm.timeperframe.denominator = 30;
+    if(v4l2_ioctl(descriptor, VIDEO_S_PARM, &streamparm) != 0)
+    {
+        errno_exit("FPS hardcode fail");
+    }
+
 
     /* Buggy driver paranoia. */
     min = fmt.fmt.pix.width * 2;
