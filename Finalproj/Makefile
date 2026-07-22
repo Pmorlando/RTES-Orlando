@@ -7,21 +7,21 @@ CFLAGS= -O0 -g $(INCLUDE_DIRS) $(CDEFS)
 LIBS= -lrt
 
 HFILES= 
-CFILES= capture.c
+CFILES= finalproj.c
 
 SRCS= ${HFILES} ${CFILES}
 OBJS= ${CFILES:.c=.o}
 
-all:	capture
+all:	finalproj
 
 clean:
 	-rm -f *.o *.d
-	-rm -f capture
+	-rm -f finalproj
 
 distclean:
 	-rm -f *.o *.d
 
-capture: ${OBJS}
+finalproj: ${OBJS}
 	$(CC) $(LDFLAGS) $(CFLAGS) -o $@ $@.o $(LIBS)
 
 depend:

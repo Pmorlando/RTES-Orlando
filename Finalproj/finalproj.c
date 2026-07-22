@@ -59,6 +59,9 @@ static int diffidx = 0;
 static int diffhistcount = 0;
 static int spikethresh = 0;// test if this is an accurate thresh and increase if needed
 
+//static double frametotal = 0; idk if ill need 
+
+
 static struct v4l2_format fmt;
 
 enum io_method 
@@ -214,7 +217,7 @@ static void process_image(const void *p, int size)
 		(frame_time.tv_nsec - lastframe_time.tv_nsec)/1000000.0;
 		syslog(LOG_INFO, "frame %d: frame time %.3f, FPS = %.3f", 
 				framecnt, dt, 1000.0/ dt);
-		frametotal+=dt;
+		// frametotal+=dt;
 	}
 	else
 	{
@@ -802,7 +805,7 @@ static double diffcalc(unsigned char *currframe, unsigned char *prevframe)
 
     double maxdiff = (double)graysize * 255; // if ever pixel diff
     double diffpercent = ((double)diffsum / maxdiff) * 100.0;
-    diffstore(diffpercent); //store to buffer
+    
     return diffpercent;
 }
 
@@ -820,17 +823,20 @@ static int singleframecap(void)
     tv.tv_sec = 0;
     tv.tv_usec = 0;
 
-    r = select(fd + 1, &fds, NULL, NULL, &tv);
+    r = select(fd + 1, &fds, NULL, NULL, &tv);// first few frames not going to work so remove hard quits from here and swap for syslog
 
     if (-1 == r)
     {
         if (EINTR == errno)
+        {
+			return 0;
+		}
         errno_exit("select");
     }
     if (0 == r)
     {
-        fprintf(stderr, "select timeout\n");
-        exit(EXIT_FAILURE);
+        syslog(LOG_WARNING, "S1 cam not ready frame %d", framecnt);
+        return 0;
     }
     return read_frame();
 }
@@ -1170,6 +1176,7 @@ int main(int argc, char **argv)
 
    for(i=0;i<NUM_THREADS;i++)
        pthread_join(threads[i], NULL);
+       
 
     stop_capturing();
     uninit_device();
@@ -1266,6 +1273,7 @@ void *Service_1(void *threadp)
         if(firstframe == 0)
         {
             diffpercent = diffcalc(currgray,lastgray);
+            diffstore(diffpercent); //store to buffer
             syslog(LOG_INFO, "frame %d: diff percent=%.3f", framecnt, diffpercent);
         }
         else
