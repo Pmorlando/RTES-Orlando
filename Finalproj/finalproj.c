@@ -57,7 +57,7 @@ static int firstframe = 1;
 static double diffhistory[5] = {0};// wil lsee if 5 is enough
 static int diffidx = 0;
 static int diffhistcount = 0;
-static int spikethresh = 0;// test if this is an accurate thresh and increase if needed
+static int spikethresh = 0.42;// test if this is an accurate thresh and increase if needed
 
 //static double frametotal = 0; idk if ill need 
 
@@ -863,11 +863,13 @@ static int spikethensettle(void) // if frame after diff calc spike
     for(int i = 0; i < diffbuffsize; i++)
     {
         int index = (diffidx -1 - i + diffbuffsize) % diffbuffsize; //get index for the rest of the values
-        if(diffhistory[index] > spikethresh) spike++;
-
-        if(spike > 1) break; // try to rule out random single spike in diff
+        if(diffhistory[index] > spikethresh) 
+        {
+			spike = 1;
+			break;
+		}
     }
-    if(spike > 1 && lastdiff < spikethresh) return 1; // 1 if there is good frame
+    if(spike > 1) return 1; // 1 if there is good frame taking out  && lastdiff < spikethresh for testing
     return 0; // 0 if fail test
 }
 
