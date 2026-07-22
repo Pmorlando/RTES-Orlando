@@ -45,6 +45,7 @@
 #define VRES 480
 #define HRES_STR "640"
 #define VRES_STR "480"
+#define diffbuffsize  5
 
 // diff cap stuff 
 #define graysize (HRES*VRES)
@@ -53,6 +54,10 @@ static unsigned char lastgray[graysize];
 static unsigned char *lastframeptr = NULL;
 static int lastframesize = 0;
 static int firstframe = 1;
+static double diffhistory[5] = {0};// wil lsee if 5 is enough
+static int diffidx = 0;
+static int diffhistcount = 0;
+static int spikethresh = 0;// test if this is an accurate thresh and increase if needed
 
 static struct v4l2_format fmt;
 
@@ -797,6 +802,7 @@ static double diffcalc(unsigned char *currframe, unsigned char *prevframe)
 
     double maxdiff = (double)graysize * 255; // if ever pixel diff
     double diffpercent = ((double)diffsum / maxdiff) * 100.0;
+    diffstore(diffpercent); //store to buffer
     return diffpercent;
 }
 
@@ -812,7 +818,7 @@ static int singleframecap(void)
     FD_ZERO(&fds);
     FD_SET(fd, &fds);
     tv.tv_sec = 0;
-    tv.tv_nsec = 0;
+    tv.tv_usec = 0;
 
     r = select(fd + 1, &fds, NULL, NULL, &tv);
 
@@ -828,6 +834,40 @@ static int singleframecap(void)
     }
     return read_frame();
 }
+
+static void diffstore(double value) // store last 5 diff values for comparison
+{
+    diffhistory[diffidx] = value; // store the diff value
+    diffidx = (diffidx +1) % diffbuffsize; //update index and wrap when it hits 5
+    if(diffhistcount < diffbuffsize)
+    {
+        diffhistcount++;
+    }
+}
+
+static int spikethensettle(void) // if frame after diff calc spike
+{
+    if(diffhistcount < diffbuffsize) return 0; // not enough values in the buffer to look at 
+
+    int lastindex = (diffidx - 1 + diffbuffsize) % diffbuffsize; // finds last index and wraps if over 4
+    double lastdiff = diffhistory[lastindex];
+
+    // any spike in 5 values
+    int spike =0;
+    for(int i = 0; i < diffbuffsize; i++)
+    {
+        int index = (diffidx -1 - i + diffbuffsize) % diffbuffsize; //get index for the rest of the values
+        if(diffhistory[index] > spikethresh) spike++;
+
+        if(spike > 1) break; // try to rule out random single spike in diff
+    }
+    if(spike > 1 && lastdiff < spikethresh) return 1; // 1 if there is good frame
+    return 0; // 0 if fail test
+}
+
+
+// static int keepframe // do iff in sequencer
+
 
 // something that takes the last maybe 5 or 10 diff captures and if there was an increase
 // followed by 2 0s then copy the frame to a queue for rgb and then storage and sharpening
@@ -1184,8 +1224,8 @@ void *Sequencer(void *threadp)
         // Service_2 = RT_MAX-2	@ 12 Hz as of now will change
         if((seqCnt % 5) == 0) sem_post(&semS2);
 
-        // Service_3 = RT_MAX-3	@ 10 Hz as of now will change 
-        if((seqCnt % 6) == 0) sem_post(&semS3);
+        // Service_3 = RT_MAX-3	@ 2 Hz as of now will change 
+        if((seqCnt % 30) == 0) sem_post(&semS3);
 
 
     } while(!abortTest && (seqCnt < threadParams->sequencePeriods));
@@ -1196,8 +1236,6 @@ void *Sequencer(void *threadp)
 
     pthread_exit((void *)0);
 }
-
-
 
 void *Service_1(void *threadp)
 {
@@ -1218,15 +1256,16 @@ void *Service_1(void *threadp)
         S1Cnt++;
 
 	// DO WORK
+        double diffpercent =0;
         singleframecap();
         if(lastframeptr != NULL)
         {
-            grayscaleextract(lastframeptr, currgray)
+            grayscaleextract(lastframeptr, currgray);
         }
 
         if(firstframe == 0)
         {
-            double diffpercent = diffcalc(currgray,lastgray);
+            diffpercent = diffcalc(currgray,lastgray);
             syslog(LOG_INFO, "frame %d: diff percent=%.3f", framecnt, diffpercent);
         }
         else
@@ -1235,18 +1274,24 @@ void *Service_1(void *threadp)
         }
         memcpy(lastgray, currgray, graysize);// rename lastgay to curr gray 
 
+        if(spikethensettle() == 1)
+        {
+            syslog(LOG_INFO, "frame %d seems good: diff percent=%.3f", framecnt,diffpercent);
+            // keepframe(IDK TELL IT TO KEEP THAT LAST ONE)
+        }
+
 
 
 	// on order of up to milliseconds of latency to get time
         clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
         syslog(LOG_CRIT, "S1 30 Hz on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S1Cnt, current_realtime-start_realtime);
+        
     }
 
     // Resource shutdown here
     //
     pthread_exit((void *)0);
 }
-
 
 void *Service_2(void *threadp)
 {
@@ -1264,7 +1309,7 @@ void *Service_2(void *threadp)
         S2Cnt++;
 
         clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
-        syslog(LOG_CRIT, "S2 20 Hz on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S2Cnt, current_realtime-start_realtime);
+        syslog(LOG_CRIT, "S2 future ready queue, rgb convert, push to sharp save queue 12 Hz on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S2Cnt, current_realtime-start_realtime);
     }
 
     pthread_exit((void *)0);
@@ -1286,7 +1331,7 @@ void *Service_3(void *threadp)
         S3Cnt++;
 
         clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
-        syslog(LOG_CRIT, "S3 10 Hz on core %d forrelease %llu @ sec=%6.9lf\n", sched_getcpu(), S3Cnt, current_realtime-start_realtime);
+        syslog(LOG_CRIT, "S3 2 Hz future sharpen, save both images to storage on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S3Cnt, current_realtime-start_realtime);
     }
 
     pthread_exit((void *)0);
