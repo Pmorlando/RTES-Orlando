@@ -46,6 +46,10 @@
 #define HRES_STR "640"
 #define VRES_STR "480"
 #define diffbuffsize  2
+#define goodframebuffsize 3
+#define yuv2bytes (HRES*VRES*2) 
+#define sharpframebuffsize 3
+#define rgbbytes (HRES*VRES*3) //for each channel
 
 // diff cap stuff 
 #define graysize (HRES*VRES)
@@ -76,6 +80,30 @@ struct buffer
         void   *start;
         size_t  length;
 };
+
+typedef struct // for the good frame buffer
+{
+    unsigned char data[yuv2bytes];
+    int size;
+    int valid;
+} yuv2buffer;
+
+static yuv2buffer goodframebuff[goodframebuffsize]; // makes buffer of 3 for good frames 
+static int goodreadindex = 0;
+static int goodwriteindex = 0;
+static pthread_mutex_t goodframemutex; // mutex for the good frames
+
+typedef struct 
+{
+    unsigned char data[rgbbytes];
+    int size;
+    int valid;
+} rgbbuffer;
+
+static rgbbuffer sharpframebuff[sharpframebuffsize]; // makes buffer of 3 of frames to sharpen
+static int sharpreadindex = 0;
+static int sharpwriteindex = 0;
+static pthread_mutex_t sharpframemutex; // mutex for the to be sharp frames
 
 static char            *dev_name;
 //static enum io_method   io = IO_METHOD_USERPTR;
@@ -198,6 +226,23 @@ void yuv2rgb(int y, int u, int v, unsigned char *r, unsigned char *g, unsigned c
    *r = r1 ;
    *g = g1 ;
    *b = b1 ;
+}
+
+static void givemergb(unsigned char *yuv, unsigned char *rgb, int yuvsize) // from process image original function
+{
+    int i, newi;
+    int ytemp, utemp, y2temp, vtemp;
+
+    for(i=0, newi=0; i<yuvsize; i += 4, newi += 6)
+    {
+        ytemp = (int)yuv[i];
+        utemp = (int)yuv[i+1];
+        y2temp = (int)yuv[i+2];
+        vtemp = (int)yuv[i+3];
+
+        yuv2rgb(ytemp, utemp, vtemp, &rgb[newi], &rgb[newi+1], &rgb[newi+2]);
+        yuv2rgb(y2temp, utemp, vtemp, &rgb[newi+3], &rgb[newi+4], &rgb[newi+5]);
+    }
 }
 
 static void process_image(const void *p, int size)
@@ -784,8 +829,6 @@ long_options[] = {
 
 // use yuv2rgb for conversion
 
-// grayscale images can just pull Y value 
-
 // diff capture with just the Y or gray of the frames to compare 
 static void grayscaleextract(unsigned char *yuyv, unsigned char *gray)
 {
@@ -808,7 +851,6 @@ static double diffcalc(unsigned char *currframe, unsigned char *prevframe)
     
     return diffpercent;
 }
-
 
 static int singleframecap(void)
 {
@@ -875,8 +917,6 @@ static int spikethensettle(void) // if frame after diff calc spike
     return 0; // 0 if fail test
 }
 
-
-// static int keepframe // do iff in sequencer
 
 
 // something that takes the last maybe 5 or 10 diff captures and if there was an increase
@@ -1058,6 +1098,15 @@ int main(int argc, char **argv)
     if (sem_init (&semS1, 0, 0)) { printf ("Failed to initialize S1 semaphore\n"); exit (-1); }
     if (sem_init (&semS2, 0, 0)) { printf ("Failed to initialize S2 semaphore\n"); exit (-1); }
     if (sem_init (&semS3, 0, 0)) { printf ("Failed to initialize S3 semaphore\n"); exit (-1); }
+
+    // init the mutexes like pthread3ok.c
+    pthread_mutexattr_t mutexattr;
+    pthread_mutexattr_init(&mutexattr);
+    pthread_mutexattr_setprotocol(&mutexattr, PTHREAD_PRIO_INHERIT);
+
+    pthread_mutex_init(&goodframemutex, &mutexattr);
+    pthread_mutex_init(&sharpframemutex, &mutexattr);
+
 
     mainpid=getpid();
 
@@ -1289,7 +1338,16 @@ void *Service_1(void *threadp)
         if(spikethensettle() == 1)
         {
             syslog(LOG_INFO, "frame %d seems good: diff percent=%.3f", framecnt,diffpercent);
-            // keepframe(IDK TELL IT TO KEEP THAT LAST ONE)
+
+            pthread_mutex_lock(&goodframemutex);
+            int index = goodwriteindex;
+            memcpy(goodframebuff[index].data, lastframeptr, lastframesize); // copy frame that is good to the good frame buffer
+            goodframebuff[index].size = lastframesize;
+            goodframebuff[index].valid = 1; 
+            goodwriteindex = (goodwriteindex +1) % goodframebuffsize; //update available index with rap around
+            syslog(LOG_INFO,"frame %d copied to good frame buffer", framecnt);
+            pthread_mutex_unlock(&goodframemutex);
+
         }
 
 
@@ -1320,8 +1378,48 @@ void *Service_2(void *threadp)
         sem_wait(&semS2);
         S2Cnt++;
 
+        // checking good frame buffer for a frame
+        pthread_mutex_lock(&goodframemutex);
+        int frameready = goodframebuff[goodreadindex].valid; // check if buffer has frame ready
+
+        unsigned char localcopy[yuv2bytes];
+        int localsize =0;
+        if(frameready ==1)
+        {
+            memcpy(localcopy, goodframebuff[goodreadindex].data, goodframebuff[goodreadindex].size);
+            localsize = goodframebuff[goodreadindex].size;
+
+            goodframebuff[goodreadindex].valid = 0; //mark frame as read
+            goodreadindex = (goodreadindex +1)% goodframebuffsize; // move to next index
+        }
+        pthread_mutex_unlock(&goodframemutex);
+
+        if(frameready == 1)
+        {
+            // convert local copy to rgb
+            unsigned char rgbcopy[rgbbytes];
+            givemergb(localcopy, rbgcopy, localsize);
+
+            
+             
+            
+            // mutex lock sharp frame
+            // copy to sharp queue
+            // mutex unlock
+        }
+
         clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
-        syslog(LOG_CRIT, "S2 future ready queue, rgb convert, push to sharp save queue 12 Hz on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S2Cnt, current_realtime-start_realtime);
+
+        if(frameready ==1)
+        {
+            // say it found frame in the syslog
+            syslog(LOG_CRIT, "S2 found good frame, converted to rgb and copied to sharp buffer on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S2Cnt, current_realtime-start_realtime);
+        }
+        else{
+            //say no frame found in syslog
+            syslog(LOG_CRIT, "S2 no frame found, back to waiting on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S2Cnt, current_realtime-start_realtime);
+        }
+        
     }
 
     pthread_exit((void *)0);
@@ -1342,8 +1440,39 @@ void *Service_3(void *threadp)
         sem_wait(&semS3);
         S3Cnt++;
 
+        pthread_mutex_lock(&sharpframemutex);
+        int frameready = sharpbuff[sharpreadindex].valid;
+        unsigned char localcopy[rgbbytes];
+        int localsize = 0;
+        if(frameready == 1)
+        {
+            memcpy(localcopy, sharpframebuff[sharpreadindex].data, sharpframebuff[sharpreadindex].size);
+            localsize = sharpframebuff[sharpreadindex].size;
+
+            sharpframebuff[sharpreadindex].valid = 0; //frame has been read
+            sharpreadindex = (sharpreadindex +1) % sharpframebuffsize;
+        }
+        pthred_mutex_unlock(&sharpframemutex);
+
+        if(frameready == 1)
+        {
+            // sharpen localcopy
+            // save local copy with dump ppm
+            // save sharpen with dump ppm
+        }
+        
         clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
-        syslog(LOG_CRIT, "S3 2 Hz future sharpen, save both images to storage on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S3Cnt, current_realtime-start_realtime);
+        if(frameready == 1)
+        {
+            //syslog for it did it 
+            syslog(LOG_CRIT, "S3 sharpened image, save rgb and sharpe images on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S3Cnt, current_realtime-start_realtime);
+
+        }
+        else {
+            //syslog for not do it
+            syslog(LOG_CRIT, "S3 no frame was ready, back to waiting on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S3Cnt, current_realtime-start_realtime);
+        }
+
     }
 
     pthread_exit((void *)0);
