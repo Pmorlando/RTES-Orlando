@@ -63,8 +63,48 @@ static int diffidx = 0;
 static int diffhistcount = 0;
 static double spikethresh = 0.42;// test if this is an accurate thresh and increase if needed
 
-//static double frametotal = 0; idk if ill need 
+// header from sequencer 
+#define USEC_PER_MSEC (1000)
+#define NANOSEC_PER_MSEC (1000000)
+#define NANOSEC_PER_SEC (1000000000)
+#define NUM_CPU_CORES (4)
+#define TRUE (1)
+#define FALSE (0)
 
+#define NUM_THREADS (3+1)
+
+// Of the available user space clocks, CLOCK_MONONTONIC_RAW is typically most precise and not subject to 
+// updates from external timer adjustments
+//
+// However, some POSIX functions like clock_nanosleep can only use adjusted CLOCK_MONOTONIC or CLOCK_REALTIME
+//
+//#define MY_CLOCK_TYPE CLOCK_REALTIME
+//#define MY_CLOCK_TYPE CLOCK_MONOTONIC
+#define MY_CLOCK_TYPE CLOCK_MONOTONIC_RAW
+//#define MY_CLOCK_TYPE CLOCK_REALTIME_COARSE
+//#define MY_CLOCK_TYPE CLOCK_MONTONIC_COARSE
+
+int abortTest=FALSE;
+int abortS1=FALSE, abortS2=FALSE, abortS3=FALSE;
+sem_t semS1, semS2, semS3;
+struct timespec start_time_val;
+double start_realtime;
+
+typedef struct
+{
+    int threadIdx;
+    unsigned long long sequencePeriods;
+} threadParams_t;
+
+void *Sequencer(void *threadp);
+
+void *Service_1(void *threadp);
+void *Service_2(void *threadp);
+void *Service_3(void *threadp);
+
+double getTimeMsec(void);
+double realtime(struct timespec *tsptr);
+void print_scheduler(void);
 
 static struct v4l2_format fmt;
 
@@ -86,6 +126,7 @@ typedef struct // for the good frame buffer
     unsigned char data[yuv2bytes];
     int size;
     int valid;
+    int srcframe;
 } yuv2buffer;
 
 static yuv2buffer goodframebuff[goodframebuffsize]; // makes buffer of 3 for good frames 
@@ -98,6 +139,7 @@ typedef struct
     unsigned char data[rgbbytes];
     int size;
     int valid;
+    int srcframe;
 } rgbbuffer;
 
 static rgbbuffer sharpframebuff[sharpframebuffsize]; // makes buffer of 3 of frames to sharpen
@@ -149,7 +191,12 @@ static void dump_ppm(const void *p, int size, unsigned int tag, struct timespec 
     
     snprintf(dumpname, sizeof(dumpname), "frames/%s%04d.ppm", prefix, tag);
     
-    dumpfd = open(dumpname, O_WRONLY | O_NONBLOCK | O_CREAT, 00666);
+    dumpfd = open(dumpname, O_WRONLY | O_CREAT, 00666);
+    if(dumpfd < 0)
+    {
+        syslog(LOG_ERR, "dump ppm failed for %s", dumpname);
+        return;
+    }
         
 
     snprintf(&ppm_header[4], 11, "%010d", (int)time->tv_sec);
@@ -163,6 +210,11 @@ static void dump_ppm(const void *p, int size, unsigned int tag, struct timespec 
     do
     {
         written=write(dumpfd, p, size);
+        if(written < 0)
+        {
+            syslog(LOG_ERR, "dump ppm writing failed");
+            break;
+        }
         total+=written;
     } while(total < size);
 
@@ -171,9 +223,6 @@ static void dump_ppm(const void *p, int size, unsigned int tag, struct timespec 
     close(dumpfd);
     
 }
-
-// sharpen the image function
-static unsigned char sharpbuff[(1280*960*3)];
 
 static void sharpenimg(unsigned char *rgb, unsigned char *sharp, int width, int height)
 {
@@ -822,13 +871,6 @@ long_options[] = {
         { 0, 0, 0, 0 }
 };
 
-
-// use sharpenimg for the sharpening
-
-// use dump ppm for saving the pics 
-
-// use yuv2rgb for conversion
-
 // diff capture with just the Y or gray of the frames to compare 
 static void grayscaleextract(unsigned char *yuyv, unsigned char *gray)
 {
@@ -917,64 +959,7 @@ static int spikethensettle(void) // if frame after diff calc spike
     return 0; // 0 if fail test
 }
 
-
-
-// something that takes the last maybe 5 or 10 diff captures and if there was an increase
-// followed by 2 0s then copy the frame to a queue for rgb and then storage and sharpening
-// needto set up that buffer/queue
-
-// service 2 be RGB, storage, sharpen, storage 
-// service 3 maybe clear buffer or memory cleanup idk if i would need 
-// if im grouping them already
-// maybe up service 2 to 5 Hz and if nothing to save just ignore it do nothing
-// or after save do a flag to ignore for say half a second 
-// or maybe keep the buffer for the last frame and run diff off of that so i dont have repeats
-// so there needs to be a no diff value for the post spike diff calc and then some diff with the last stored one 
-// and can then recycle it 
-// need mutex for the queue for things and check for priority inversion
-
-
-#define USEC_PER_MSEC (1000)
-#define NANOSEC_PER_MSEC (1000000)
-#define NANOSEC_PER_SEC (1000000000)
-#define NUM_CPU_CORES (4)
-#define TRUE (1)
-#define FALSE (0)
-
-#define NUM_THREADS (3+1)
-
-// Of the available user space clocks, CLOCK_MONONTONIC_RAW is typically most precise and not subject to 
-// updates from external timer adjustments
-//
-// However, some POSIX functions like clock_nanosleep can only use adjusted CLOCK_MONOTONIC or CLOCK_REALTIME
-//
-//#define MY_CLOCK_TYPE CLOCK_REALTIME
-//#define MY_CLOCK_TYPE CLOCK_MONOTONIC
-#define MY_CLOCK_TYPE CLOCK_MONOTONIC_RAW
-//#define MY_CLOCK_TYPE CLOCK_REALTIME_COARSE
-//#define MY_CLOCK_TYPE CLOCK_MONTONIC_COARSE
-
-int abortTest=FALSE;
-int abortS1=FALSE, abortS2=FALSE, abortS3=FALSE;
-sem_t semS1, semS2, semS3;
-struct timespec start_time_val;
-double start_realtime;
-
-typedef struct
-{
-    int threadIdx;
-    unsigned long long sequencePeriods;
-} threadParams_t;
-
-void *Sequencer(void *threadp);
-
-void *Service_1(void *threadp);
-void *Service_2(void *threadp);
-void *Service_3(void *threadp);
-
-double getTimeMsec(void);
-double realtime(struct timespec *tsptr);
-void print_scheduler(void);
+//below from sequencer code 
 
 static inline unsigned long long tsc_read(void)
 {
@@ -1184,7 +1169,7 @@ int main(int argc, char **argv)
         printf("pthread_create successful for service 1\n");
 
 
-    // Service_2 = RT_MAX-2	@ 20 Hz
+    // Service_2 = RT_MAX-2	@ 12 Hz
     //
     rt_param[2].sched_priority=rt_max_prio-2;
     pthread_attr_setschedparam(&rt_sched_attr[2], &rt_param[2]);
@@ -1195,7 +1180,7 @@ int main(int argc, char **argv)
         printf("pthread_create successful for service 2\n");
 
 
-    // Service_3 = RT_MAX-3	@ 10 Hz
+    // Service_3 = RT_MAX-3	@ 2 Hz
     //
     rt_param[3].sched_priority=rt_max_prio-3;
     pthread_attr_setschedparam(&rt_sched_attr[3], &rt_param[3]);
@@ -1340,10 +1325,11 @@ void *Service_1(void *threadp)
             syslog(LOG_INFO, "frame %d seems good: diff percent=%.3f", framecnt,diffpercent);
 
             pthread_mutex_lock(&goodframemutex);
-            int index = goodwriteindex;
-            memcpy(goodframebuff[index].data, lastframeptr, lastframesize); // copy frame that is good to the good frame buffer
-            goodframebuff[index].size = lastframesize;
-            goodframebuff[index].valid = 1; 
+
+            memcpy(goodframebuff[goodwriteindex].data, lastframeptr, lastframesize); // copy frame that is good to the good frame buffer
+            goodframebuff[goodwriteindex].size = lastframesize;
+            goodframebuff[goodwriteindex].valid = 1; 
+            goodframebuff[goodwriteindex].srcframe = framecnt;
             goodwriteindex = (goodwriteindex +1) % goodframebuffsize; //update available index with rap around
             syslog(LOG_INFO,"frame %d copied to good frame buffer", framecnt);
             pthread_mutex_unlock(&goodframemutex);
@@ -1382,12 +1368,14 @@ void *Service_2(void *threadp)
         pthread_mutex_lock(&goodframemutex);
         int frameready = goodframebuff[goodreadindex].valid; // check if buffer has frame ready
 
-        unsigned char localcopy[yuv2bytes];
+        static unsigned char localcopy[yuv2bytes];
         int localsize =0;
+        int sourceframe = 0;
         if(frameready ==1)
         {
             memcpy(localcopy, goodframebuff[goodreadindex].data, goodframebuff[goodreadindex].size);
             localsize = goodframebuff[goodreadindex].size;
+            sourceframe = goodframebuff[goodreadindex].srcframe;
 
             goodframebuff[goodreadindex].valid = 0; //mark frame as read
             goodreadindex = (goodreadindex +1)% goodframebuffsize; // move to next index
@@ -1397,15 +1385,20 @@ void *Service_2(void *threadp)
         if(frameready == 1)
         {
             // convert local copy to rgb
-            unsigned char rgbcopy[rgbbytes];
-            givemergb(localcopy, rbgcopy, localsize);
+            static unsigned char rgbcopy[rgbbytes];
+            int rgbsize = localsize * (3/2); // yuyv 4 bytes for 2 pixel and rgb 3 byte per pixel
+            givemergb(localcopy, rgbcopy, localsize);
 
-            
-             
-            
-            // mutex lock sharp frame
-            // copy to sharp queue
-            // mutex unlock
+            pthread_mutex_lock(&sharpframemutex);
+
+            memcpy(sharpframebuff[sharpwriteindex].data, rgbcopy, rgbsize);
+            sharpframebuffsize[sharpwriteindex].size = rgbsize;
+            sharpframebuff[sharpwriteindex].valid = 1;
+            sharpframebuff[sharpwriteindex].srcframe = sourceframe;
+            sharpwriteindex = (sharpwriteindex +1 )%sharpframebuffsize;
+            syslog(LOG_INFO, "frame %d converted to rgb and copied to sharp buff", sourceframe);
+            pthread_mutex_unlock(&sharpframemutex);
+          
         }
 
         clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
@@ -1441,24 +1434,31 @@ void *Service_3(void *threadp)
         S3Cnt++;
 
         pthread_mutex_lock(&sharpframemutex);
-        int frameready = sharpbuff[sharpreadindex].valid;
-        unsigned char localcopy[rgbbytes];
+        int frameready = sharpframebuff[sharpreadindex].valid;
+        static unsigned char localcopy[rgbbytes];
         int localsize = 0;
+        int sourceframe = 0;
         if(frameready == 1)
         {
             memcpy(localcopy, sharpframebuff[sharpreadindex].data, sharpframebuff[sharpreadindex].size);
             localsize = sharpframebuff[sharpreadindex].size;
+            sourceframe = sharpframebuff[sharpreadindex].srcframe;
 
             sharpframebuff[sharpreadindex].valid = 0; //frame has been read
             sharpreadindex = (sharpreadindex +1) % sharpframebuffsize;
         }
-        pthred_mutex_unlock(&sharpframemutex);
+        pthread_mutex_unlock(&sharpframemutex);
 
         if(frameready == 1)
         {
-            // sharpen localcopy
-            // save local copy with dump ppm
-            // save sharpen with dump ppm
+            static unsigned char sharpenedimg[rgbbytes];
+            sharpenimg(localcopy, sharpenedimg, HRES, VRES);
+
+            struct timespec savetime; 
+            clock_gettime(CLOCK_REALTIME, &savetime); // needed for the dump ppm function to be clock realtime
+            dump_ppm(localcopy, localsize, sourceframe, &savetime, "RGB");
+            dump_ppm(sharpenedimg, localsize, sourceframe, &savetime, "Sharp");
+            
         }
         
         clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
