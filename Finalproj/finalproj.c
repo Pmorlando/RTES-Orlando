@@ -1392,7 +1392,7 @@ void *Service_2(void *threadp)
             pthread_mutex_lock(&sharpframemutex);
 
             memcpy(sharpframebuff[sharpwriteindex].data, rgbcopy, rgbsize);
-            sharpframebuffsize[sharpwriteindex].size = rgbsize;
+            sharpframebuff[sharpwriteindex].size = rgbsize;
             sharpframebuff[sharpwriteindex].valid = 1;
             sharpframebuff[sharpwriteindex].srcframe = sourceframe;
             sharpwriteindex = (sharpwriteindex +1 )%sharpframebuffsize;
