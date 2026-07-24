@@ -1386,7 +1386,7 @@ void *Service_2(void *threadp)
         {
             // convert local copy to rgb
             static unsigned char rgbcopy[rgbbytes];
-            int rgbsize = localsize * (3/2); // yuyv 4 bytes for 2 pixel and rgb 3 byte per pixel
+            double rgbsize = (localsize * 6) /4; // yuyv 4 bytes for 2 pixel and rgb 3 byte per pixel
             givemergb(localcopy, rgbcopy, localsize);
 
             pthread_mutex_lock(&sharpframemutex);
