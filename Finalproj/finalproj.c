@@ -4,16 +4,16 @@
 // Sequencer - 60 Hz 
 //                   [gives semaphores to all other services]
 // Service_1 - 30 Hz, camera cap and frame diff calc
-// Service_2 - 1 Hz, save frame 
-// Service_3 - 10 Hz ,every 10th Sequencer loop
+// Service_2 - 12 Hz, RGB coversion 
+// Service_3 - 2 Hz , sharpen and save RGB and sharpened image
 
 //
 // With the above, priorities by RM policy would be:
 //
 // Sequencer = RT_MAX	@ 60 Hz
 // Servcie_1 = RT_MAX-1	@ 30  Hz
-// Service_2 = RT_MAX-2	@ 20  Hz
-// Service_3 = RT_MAX-3	@ 10  Hz
+// Service_2 = RT_MAX-2	@ 12  Hz
+// Service_3 = RT_MAX-3	@ 2  Hz
 
 // This is necessary for CPU affinity macros in Linux
 #define _GNU_SOURCE
@@ -1284,8 +1284,8 @@ void *Sequencer(void *threadp)
 
 void *Service_1(void *threadp)
 {
-    struct timespec current_time_val;
-    double current_realtime;
+    struct timespec current_time_val, start;
+    double current_realtime, startreal, WCET = 0, runtime;
     unsigned long long S1Cnt=0;
     threadParams_t *threadParams = (threadParams_t *)threadp;
 
@@ -1297,8 +1297,8 @@ void *Service_1(void *threadp)
     {
 	// wait for service request from the sequencer, a signal handler or ISR in kernel
         sem_wait(&semS1);
-
         S1Cnt++;
+        clock_gettime(MY_CLOCK_TYPE, &start); startreal=realtime(&start);
 
 	// DO WORK
         double diffpercent =0;
@@ -1318,7 +1318,7 @@ void *Service_1(void *threadp)
         {
             firstframe = 0;// for skipping first frame with nothing to compare to
         }
-        memcpy(lastgray, currgray, graysize);// rename lastgay to curr gray 
+        memcpy(lastgray, currgray, graysize);// rename lastgray to curr gray 
 
         if(spikethensettle() == 1)
         {
@@ -1340,7 +1340,12 @@ void *Service_1(void *threadp)
 
 	// on order of up to milliseconds of latency to get time
         clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
-        syslog(LOG_CRIT, "S1 30 Hz on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S1Cnt, current_realtime-start_realtime);
+        runtime = current_realtime - startreal;
+        if(runtime > WCET)
+        {
+            WCET = runtime;
+        }
+        syslog(LOG_CRIT, "S1 30 Hz on core %d for release %llu @ sec=%6.9lf, WCET=%6.9f\n", sched_getcpu(), S1Cnt, current_realtime-start_realtime, WCET);
         
     }
 
@@ -1351,8 +1356,8 @@ void *Service_1(void *threadp)
 
 void *Service_2(void *threadp)
 {
-    struct timespec current_time_val;
-    double current_realtime;
+    struct timespec current_time_val, start;
+    double current_realtime, startreal, WCET = 0, runtime;
     unsigned long long S2Cnt=0;
     threadParams_t *threadParams = (threadParams_t *)threadp;
 
@@ -1363,6 +1368,7 @@ void *Service_2(void *threadp)
     {
         sem_wait(&semS2);
         S2Cnt++;
+        clock_gettime(MY_CLOCK_TYPE, &start); startreal=realtime(&start);
 
         // checking good frame buffer for a frame
         pthread_mutex_lock(&goodframemutex);
@@ -1402,15 +1408,19 @@ void *Service_2(void *threadp)
         }
 
         clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
-
+        runtime = current_realtime - startreal;
+        if(runtime > WCET)
+        {
+            WCET = runtime;
+        }
         if(frameready ==1)
         {
             // say it found frame in the syslog
-            syslog(LOG_CRIT, "S2 found good frame, converted to rgb and copied to sharp buffer on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S2Cnt, current_realtime-start_realtime);
+            syslog(LOG_CRIT, "S2 found good frame, converted to rgb and copied to sharp buffer on core %d for release %llu @ sec=%6.9lf, WCET=%6.9f\n", sched_getcpu(), S2Cnt, current_realtime-start_realtime, WCET);
         }
         else{
             //say no frame found in syslog
-            syslog(LOG_CRIT, "S2 no frame found, back to waiting on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S2Cnt, current_realtime-start_realtime);
+            syslog(LOG_CRIT, "S2 no frame found, back to waiting on core %d for release %llu @ sec=%6.9lf, WCET=%6.9f\n", sched_getcpu(), S2Cnt, current_realtime-start_realtime, WCET);
         }
         
     }
@@ -1420,8 +1430,8 @@ void *Service_2(void *threadp)
 
 void *Service_3(void *threadp)
 {
-    struct timespec current_time_val;
-    double current_realtime;
+    struct timespec current_time_val, start;
+    double current_realtime, startreal, WCET = 0, runtime;
     unsigned long long S3Cnt=0;
     threadParams_t *threadParams = (threadParams_t *)threadp;
 
@@ -1432,6 +1442,8 @@ void *Service_3(void *threadp)
     {
         sem_wait(&semS3);
         S3Cnt++;
+        clock_gettime(MY_CLOCK_TYPE, &start); startreal=realtime(&start);
+
 
         pthread_mutex_lock(&sharpframemutex);
         int frameready = sharpframebuff[sharpreadindex].valid;
@@ -1462,15 +1474,20 @@ void *Service_3(void *threadp)
         }
         
         clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
+        runtime = current_realtime - startreal;
+        if(runtime > WCET)
+        {
+            WCET = runtime;
+        }
         if(frameready == 1)
         {
             //syslog for it did it 
-            syslog(LOG_CRIT, "S3 sharpened image, save rgb and sharpe images on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S3Cnt, current_realtime-start_realtime);
+            syslog(LOG_CRIT, "S3 sharpened image, save rgb and sharpe images on core %d for release %llu @ sec=%6.9lf WCET =%6.9lf\n", sched_getcpu(), S3Cnt, current_realtime-start_realtime, WCET);
 
         }
         else {
             //syslog for not do it
-            syslog(LOG_CRIT, "S3 no frame was ready, back to waiting on core %d for release %llu @ sec=%6.9lf\n", sched_getcpu(), S3Cnt, current_realtime-start_realtime);
+            syslog(LOG_CRIT, "S3 no frame was ready, back to waiting on core %d for release %llu @ sec=%6.9lf WCET =%6.9lf\n", sched_getcpu(), S3Cnt, current_realtime-start_realtime, WCET);
         }
 
     }
