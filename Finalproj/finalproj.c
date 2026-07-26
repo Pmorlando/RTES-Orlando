@@ -62,6 +62,7 @@ static double diffhistory[5] = {0};// wil lsee if 5 is enough
 static int diffidx = 0;
 static int diffhistcount = 0;
 static double spikethresh = 0.42;// test if this is an accurate thresh and increase if needed
+static double s1wcet = 0, s2wcet = 0, s3wcet =0;
 
 // header from sequencer 
 #define USEC_PER_MSEC (1000)
@@ -1192,7 +1193,7 @@ int main(int argc, char **argv)
  
     // Create Sequencer thread, which like a cyclic executive, is highest prio
     printf("Start sequencer\n");
-    threadParams[0].sequencePeriods=2000; // adjust for the correct time 
+    threadParams[0].sequencePeriods=4000; // adjust for the correct time 
     // 2k giving abit over 30 sec 
 
     // run sequencer on core 1
@@ -1278,6 +1279,8 @@ void *Sequencer(void *threadp)
     sem_post(&semS1); sem_post(&semS2); sem_post(&semS3);
 
     abortS1=TRUE; abortS2=TRUE; abortS3=TRUE;
+    
+    syslog(LOG_CRIT, "S1WCET = %6.9f, S2WCET = %6.9f, S3WCET = %6.9f", s1wcet, s2wcet, s3wcet); 
 
     pthread_exit((void *)0);
 }
@@ -1285,7 +1288,7 @@ void *Sequencer(void *threadp)
 void *Service_1(void *threadp)
 {
     struct timespec current_time_val, start;
-    double current_realtime, startreal, WCET = 0, runtime;
+    double current_realtime, startreal, runtime;
     unsigned long long S1Cnt=0;
     threadParams_t *threadParams = (threadParams_t *)threadp;
 
@@ -1341,11 +1344,11 @@ void *Service_1(void *threadp)
 	// on order of up to milliseconds of latency to get time
         clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
         runtime = current_realtime - startreal;
-        if(runtime > WCET)
+        if(runtime > s1wcet)
         {
-            WCET = runtime;
+            s1wcet = runtime;
         }
-        syslog(LOG_CRIT, "S1 30 Hz on core %d for release %llu @ sec=%6.9lf, WCET=%6.9f\n", sched_getcpu(), S1Cnt, current_realtime-start_realtime, WCET);
+        syslog(LOG_CRIT, "S1 30 Hz on core %d for release %llu @ sec=%6.9lf, runtime=%6.9f\n", sched_getcpu(), S1Cnt, current_realtime-start_realtime, runtime);
         
     }
 
@@ -1409,18 +1412,18 @@ void *Service_2(void *threadp)
 
         clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
         runtime = current_realtime - startreal;
-        if(runtime > WCET)
+        if(runtime > s2wcet)
         {
-            WCET = runtime;
+            s2wcet = runtime;
         }
         if(frameready ==1)
         {
             // say it found frame in the syslog
-            syslog(LOG_CRIT, "S2 found good frame, converted to rgb and copied to sharp buffer on core %d for release %llu @ sec=%6.9lf, WCET=%6.9f\n", sched_getcpu(), S2Cnt, current_realtime-start_realtime, WCET);
+            syslog(LOG_CRIT, "S2 found good frame, converted to rgb and copied to sharp buffer on core %d for release %llu @ sec=%6.9lf, runtime=%6.9f\n", sched_getcpu(), S2Cnt, current_realtime-start_realtime, runtime);
         }
         else{
             //say no frame found in syslog
-            syslog(LOG_CRIT, "S2 no frame found, back to waiting on core %d for release %llu @ sec=%6.9lf, WCET=%6.9f\n", sched_getcpu(), S2Cnt, current_realtime-start_realtime, WCET);
+            syslog(LOG_CRIT, "S2 no frame found, back to waiting on core %d for release %llu @ sec=%6.9lf, runtime=%6.9f\n", sched_getcpu(), S2Cnt, current_realtime-start_realtime, runtime);
         }
         
     }
@@ -1475,19 +1478,19 @@ void *Service_3(void *threadp)
         
         clock_gettime(MY_CLOCK_TYPE, &current_time_val); current_realtime=realtime(&current_time_val);
         runtime = current_realtime - startreal;
-        if(runtime > WCET)
+        if(runtime > s2wcet)
         {
-            WCET = runtime;
+            s3wcet = runtime;
         }
         if(frameready == 1)
         {
             //syslog for it did it 
-            syslog(LOG_CRIT, "S3 sharpened image, save rgb and sharpe images on core %d for release %llu @ sec=%6.9lf WCET =%6.9lf\n", sched_getcpu(), S3Cnt, current_realtime-start_realtime, WCET);
+            syslog(LOG_CRIT, "S3 sharpened image, save rgb and sharpe images on core %d for release %llu @ sec=%6.9lf runtime =%6.9lf\n", sched_getcpu(), S3Cnt, current_realtime-start_realtime, runtime);
 
         }
         else {
             //syslog for not do it
-            syslog(LOG_CRIT, "S3 no frame was ready, back to waiting on core %d for release %llu @ sec=%6.9lf WCET =%6.9lf\n", sched_getcpu(), S3Cnt, current_realtime-start_realtime, WCET);
+            syslog(LOG_CRIT, "S3 no frame was ready, back to waiting on core %d for release %llu @ sec=%6.9lf runtime =%6.9lf\n", sched_getcpu(), S3Cnt, current_realtime-start_realtime, runtime);
         }
 
     }
