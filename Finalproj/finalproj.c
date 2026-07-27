@@ -4,7 +4,7 @@
 // Sequencer - 60 Hz 
 //                   [gives semaphores to all other services]
 // Service_1 - 30 Hz, camera cap and frame diff calc
-// Service_2 - 12 Hz, RGB coversion 
+// Service_2 - 4 Hz, RGB coversion 
 // Service_3 - 2 Hz , sharpen and save RGB and sharpened image
 
 //
@@ -12,7 +12,7 @@
 //
 // Sequencer = RT_MAX	@ 60 Hz
 // Servcie_1 = RT_MAX-1	@ 30  Hz
-// Service_2 = RT_MAX-2	@ 12  Hz
+// Service_2 = RT_MAX-2	@ 4  Hz
 // Service_3 = RT_MAX-3	@ 2  Hz
 
 // This is necessary for CPU affinity macros in Linux
@@ -58,7 +58,7 @@ static unsigned char lastgray[graysize];
 static unsigned char *lastframeptr = NULL;
 static int lastframesize = 0;
 static int firstframe = 1;
-static double diffhistory[5] = {0};// wil lsee if 5 is enough
+static double diffhistory[5] = {0};// will see if 5 is enough
 static int diffidx = 0;
 static int diffhistcount = 0;
 static double spikethresh = 0.42;// test if this is an accurate thresh and increase if needed
@@ -190,7 +190,7 @@ static void dump_ppm(const void *p, int size, unsigned int tag, struct timespec 
     int written, i, total, dumpfd;
     char dumpname[64]; // renaming so i can save b4 and after images
     
-    snprintf(dumpname, sizeof(dumpname), "frames/%s%04d.ppm", prefix, tag);
+    snprintf(dumpname, sizeof(dumpname), "frames/%s%05d.ppm", prefix, tag);
     
     dumpfd = open(dumpname, O_WRONLY | O_CREAT, 00666);
     if(dumpfd < 0)
@@ -1170,7 +1170,7 @@ int main(int argc, char **argv)
         printf("pthread_create successful for service 1\n");
 
 
-    // Service_2 = RT_MAX-2	@ 12 Hz
+    // Service_2 = RT_MAX-2	@ 4 Hz
     //
     rt_param[2].sched_priority=rt_max_prio-2;
     pthread_attr_setschedparam(&rt_sched_attr[2], &rt_param[2]);
@@ -1193,7 +1193,7 @@ int main(int argc, char **argv)
  
     // Create Sequencer thread, which like a cyclic executive, is highest prio
     printf("Start sequencer\n");
-    threadParams[0].sequencePeriods=4000; // adjust for the correct time 
+    threadParams[0].sequencePeriods=110000; // adjust for the correct time
     // 2k giving abit over 30 sec 
 
     // run sequencer on core 1
@@ -1267,8 +1267,8 @@ void *Sequencer(void *threadp)
         // Service_1 = RT_MAX-1	@ 30 Hz
         if((seqCnt % 2) == 0) sem_post(&semS1);
 
-        // Service_2 = RT_MAX-2	@ 12 Hz as of now will change
-        if((seqCnt % 5) == 0) sem_post(&semS2);
+        // Service_2 = RT_MAX-2	@ 4 Hz as of now will change
+        if((seqCnt % 15) == 0) sem_post(&semS2);
 
         // Service_3 = RT_MAX-3	@ 2 Hz as of now will change 
         if((seqCnt % 30) == 0) sem_post(&semS3);
@@ -1539,3 +1539,5 @@ void print_scheduler(void)
 }
 
 // encode to MPEG with code from announcement to see it better 
+// used ffmpeg -f image2 -pattern_type glob -i 'RGB*.ppm' -vcodec mpeg4 timelapse.mp4
+// to make mmpeg
