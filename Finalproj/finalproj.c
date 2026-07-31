@@ -61,7 +61,7 @@ static int firstframe = 1;
 static double diffhistory[5] = {0};// will see if 5 is enough
 static int diffidx = 0;
 static int diffhistcount = 0;
-static double spikethresh = 0.42;// test if this is an accurate thresh and increase if needed
+static double spikethresh = 0.45;// test if this is an accurate thresh and increase if needed
 static double s1wcet = 0, s2wcet = 0, s3wcet =0;
 
 // header from sequencer 
